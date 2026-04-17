@@ -41,10 +41,10 @@
 - [x] 5.6 Write unit tests: response parser (all three fallback cases), timeout handling
 
 ## 6. Obsidian Sync
-- [ ] 6.1 Implement markdown file writer with YAML frontmatter and notes section
-- [ ] 6.2 Implement atomic git sync: pull -> write -> add -> commit -> push (asyncio.to_thread)
-- [ ] 6.3 Implement conflict handling: abort merge, save as .conflict.md, notify user
-- [ ] 6.4 Write unit tests: markdown export generator
+- [x] 6.1 Implement markdown file writer with YAML frontmatter and notes section
+- [x] 6.2 Implement atomic git sync: pull -> write -> add -> commit -> push (asyncio.to_thread)
+- [x] 6.3 Implement conflict handling: abort merge, save as .conflict.md, notify user
+- [x] 6.4 Write unit tests: markdown export generator
 
 ## 7. Telegram Bot Core
 - [ ] 7.1 Set up python-telegram-bot Application with polling in bot.py
