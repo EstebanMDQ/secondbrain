@@ -202,14 +202,16 @@ def init_cmd() -> None:
 @click.pass_context
 def run_cmd(ctx: click.Context) -> None:
     """Start the Telegram bot in the foreground."""
+    import asyncio
+
+    from secondbrain import bot
+
     try:
-        config.load_config()
+        settings = config.load_config()
     except config.ConfigError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    # TODO(task 8/10): wire in bot.py entry point once the Telegram layer lands.
-    # Keep the import lazy so the CLI does not force bot deps at module load.
-    click.echo("bot not yet implemented")
+    asyncio.run(bot.run_bot(settings))
 
 
 @main.command("install-service")

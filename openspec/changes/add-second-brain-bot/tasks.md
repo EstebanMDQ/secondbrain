@@ -47,12 +47,12 @@
 - [x] 6.4 Write unit tests: markdown export generator
 
 ## 7. Telegram Bot Core
-- [ ] 7.1 Set up python-telegram-bot Application with polling in bot.py
-- [ ] 7.2 Implement ALLOWED_USER_ID filter (ignore unauthorized users silently)
-- [ ] 7.3 Implement message handler: check discussion mode -> categorize -> upsert -> sync -> reply
-- [ ] 7.4 Implement new project confirmation flow (inline keyboard yes/no)
-- [ ] 7.5 Persist pending confirmations to SQLite for restart survival
-- [ ] 7.6 Write integration test: chat handler with mocked AI
+- [x] 7.1 Set up python-telegram-bot Application with polling in bot.py
+- [x] 7.2 Implement ALLOWED_USER_ID filter (ignore unauthorized users silently)
+- [x] 7.3 Implement message handler: check discussion mode -> categorize -> upsert -> sync -> reply
+- [x] 7.4 Implement new project confirmation flow (inline keyboard yes/no)
+- [x] 7.5 Persist pending confirmations to SQLite for restart survival
+- [x] 7.6 Write integration test: chat handler with mocked AI
 
 ## 8. Discussion Mode
 - [ ] 8.1 Implement conversation context: rolling summary + recent message window (max_history from config)
