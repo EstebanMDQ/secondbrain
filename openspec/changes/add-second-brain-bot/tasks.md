@@ -4,8 +4,8 @@
 - [ ] 1.1 Initialize Python project with uv, src layout (pyproject.toml with entry points)
 - [ ] 1.2 Create src/secondbrain/ package structure (cli.py, bot.py, handlers.py, ai.py, store.py, obsidian.py, discussion.py, config.py, service.py)
 - [ ] 1.3 Configure pyproject.toml: package metadata, dependencies, `[project.scripts]` entry point for `second-brain` CLI
-- [ ] 1.4 Create Dockerfile and docker-compose.yml (optional deployment path)
-- [ ] 1.5 Add LICENSE file
+- [x] 1.4 Create Dockerfile and docker-compose.yml (optional deployment path)
+- [x] 1.5 Add LICENSE file
 
 ## 2. CLI and Configuration
 - [x] 2.1 Implement cli.py with click: `second-brain init`, `run`, `install-service`, `uninstall-service`, `status`

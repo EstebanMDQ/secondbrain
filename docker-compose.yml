@@ -1,0 +1,53 @@
+# second-brain Docker Compose deployment.
+#
+# Required environment (supply via host env or a .env file next to this compose file):
+#   VAULT_DIR                              Absolute path to the Obsidian vault on the
+#                                          host. Mounted read-write at /vault in the
+#                                          container. Must be a git repo with a remote.
+#   SECONDBRAIN_TELEGRAM_TOKEN             Telegram bot token from @BotFather.
+#   SECONDBRAIN_TELEGRAM_ALLOWED_USER_ID   Telegram user ID allowed to talk to the bot.
+#   SECONDBRAIN_AI_CATEGORIZATION_BASE_URL OpenAI-compatible base URL for categorization.
+#   SECONDBRAIN_AI_CATEGORIZATION_API_KEY  API key for the categorization provider.
+#   SECONDBRAIN_AI_CATEGORIZATION_MODEL    Model name for categorization.
+#   SECONDBRAIN_AI_DISCUSSION_BASE_URL     OpenAI-compatible base URL for discussion.
+#   SECONDBRAIN_AI_DISCUSSION_API_KEY      API key for the discussion provider.
+#   SECONDBRAIN_AI_DISCUSSION_MODEL        Model name for discussion.
+#   SECONDBRAIN_OBSIDIAN_VAULT_PATH        Vault path as seen from inside the container
+#                                          (default: /vault, matching the mount below).
+#
+# Optional environment:
+#   CONFIG_DIR                             Host directory to persist config.toml
+#                                          (default: ./config).
+#   DATA_DIR                               Host directory to persist the SQLite DB
+#                                          (default: ./data).
+#   SECONDBRAIN_LOG_LEVEL                  info|debug|warning|error (default: info).
+#   SECONDBRAIN_AI_TIMEOUT_SECONDS         AI request timeout (default: 30).
+#   SECONDBRAIN_DISCUSSION_MAX_HISTORY     Messages kept before compaction (default: 20).
+#   SECONDBRAIN_DISCUSSION_STALE_MINUTES   Idle timeout for discussion mode (default: 30).
+#   SECONDBRAIN_OBSIDIAN_SUBFOLDER         Vault subfolder for notes (default: projects).
+
+services:
+  secondbrain:
+    build: .
+    image: secondbrain:latest
+    container_name: secondbrain
+    restart: unless-stopped
+    volumes:
+      - ${CONFIG_DIR:-./config}:/home/secondbrain/.config/second-brain
+      - ${DATA_DIR:-./data}:/home/secondbrain/.local/share/second-brain
+      - ${VAULT_DIR}:/vault
+    environment:
+      SECONDBRAIN_TELEGRAM_TOKEN: ${SECONDBRAIN_TELEGRAM_TOKEN}
+      SECONDBRAIN_TELEGRAM_ALLOWED_USER_ID: ${SECONDBRAIN_TELEGRAM_ALLOWED_USER_ID}
+      SECONDBRAIN_AI_CATEGORIZATION_BASE_URL: ${SECONDBRAIN_AI_CATEGORIZATION_BASE_URL}
+      SECONDBRAIN_AI_CATEGORIZATION_API_KEY: ${SECONDBRAIN_AI_CATEGORIZATION_API_KEY}
+      SECONDBRAIN_AI_CATEGORIZATION_MODEL: ${SECONDBRAIN_AI_CATEGORIZATION_MODEL}
+      SECONDBRAIN_AI_DISCUSSION_BASE_URL: ${SECONDBRAIN_AI_DISCUSSION_BASE_URL}
+      SECONDBRAIN_AI_DISCUSSION_API_KEY: ${SECONDBRAIN_AI_DISCUSSION_API_KEY}
+      SECONDBRAIN_AI_DISCUSSION_MODEL: ${SECONDBRAIN_AI_DISCUSSION_MODEL}
+      SECONDBRAIN_AI_TIMEOUT_SECONDS: ${SECONDBRAIN_AI_TIMEOUT_SECONDS:-30}
+      SECONDBRAIN_DISCUSSION_MAX_HISTORY: ${SECONDBRAIN_DISCUSSION_MAX_HISTORY:-20}
+      SECONDBRAIN_DISCUSSION_STALE_MINUTES: ${SECONDBRAIN_DISCUSSION_STALE_MINUTES:-30}
+      SECONDBRAIN_OBSIDIAN_VAULT_PATH: ${SECONDBRAIN_OBSIDIAN_VAULT_PATH:-/vault}
+      SECONDBRAIN_OBSIDIAN_SUBFOLDER: ${SECONDBRAIN_OBSIDIAN_SUBFOLDER:-projects}
+      SECONDBRAIN_LOG_LEVEL: ${SECONDBRAIN_LOG_LEVEL:-info}
