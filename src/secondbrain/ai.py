@@ -91,6 +91,15 @@ text only, no JSON, no code fences.
 """
 
 
+_SAVE_SUMMARY_SYSTEM = """\
+You are a note-taking assistant. Given a conversation transcript (and an
+optional earlier summary), distil the most useful takeaways into concise
+bullet points suitable for appending to a project's notes file. Return one
+bullet per line, each starting with '- '. No prose, no headers, no code
+fences, no JSON.
+"""
+
+
 def _format_projects_block(projects: list[ProjectMeta]) -> str:
     if not projects:
         return "(no existing projects yet)"
@@ -136,6 +145,56 @@ def build_discussion_messages(
         )
     messages.extend(history)
     return messages
+
+
+def build_save_summary_prompt(
+    history: list[dict[str, str]],
+    prior_summary: str | None,
+) -> list[dict[str, str]]:
+    """Build messages for the /save summarization: bullet notes for a project."""
+    transcript_lines: list[str] = []
+    for message in history:
+        role = message.get("role", "user")
+        content = message.get("content", "")
+        transcript_lines.append(f"[{role}] {content}")
+    transcript = "\n".join(transcript_lines) or "(no messages)"
+
+    if prior_summary:
+        user_content = (
+            "Earlier conversation summary:\n"
+            f"{prior_summary}\n\n"
+            "Recent transcript:\n"
+            f"{transcript}\n\n"
+            "Produce concise bullet-point notes."
+        )
+    else:
+        user_content = (
+            "Transcript:\n"
+            f"{transcript}\n\n"
+            "Produce concise bullet-point notes."
+        )
+
+    return [
+        {"role": "system", "content": _SAVE_SUMMARY_SYSTEM},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def parse_bullets(text: str) -> list[str]:
+    """Extract bullet lines from ``text``. Falls back to the full text if empty."""
+    bullets: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("- ", "* ")):
+            bullets.append(stripped[2:].strip())
+        elif stripped.startswith(("-", "*")):
+            bullets.append(stripped[1:].strip())
+    if bullets:
+        return [b for b in bullets if b]
+    fallback = text.strip()
+    return [fallback] if fallback else []
 
 
 def build_compaction_prompt(
@@ -332,3 +391,18 @@ class AIClients:
             )
         )
         return self._extract_content(response)
+
+    async def summarize_discussion(
+        self,
+        history: list[dict[str, str]],
+        prior_summary: str | None,
+    ) -> list[str]:
+        """Summarize a discussion into a list of bullet-point notes."""
+        prompt = build_save_summary_prompt(history, prior_summary)
+        response = await self._with_timeout(
+            self._discussion_client.chat.completions.create(
+                model=self._config.discussion.model,
+                messages=prompt,
+            )
+        )
+        return parse_bullets(self._extract_content(response))

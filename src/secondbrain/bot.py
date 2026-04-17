@@ -20,7 +20,7 @@ from telegram.ext import (
     filters,
 )
 
-from secondbrain import ai, config, handlers, store
+from secondbrain import ai, config, discussion, handlers, store
 from secondbrain.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -59,10 +59,25 @@ def _build_application(settings: Settings) -> tuple[Application, handlers.BotCon
     application.bot_data[handlers.CTX_KEY] = ctx
 
     application.add_handler(CommandHandler("start", handlers.start_command))
+    application.add_handler(CommandHandler("chat", handlers.chat_command))
+    application.add_handler(CommandHandler("clear", handlers.clear_command))
+    application.add_handler(CommandHandler("save", handlers.save_command))
     application.add_handler(
         CallbackQueryHandler(
             handlers.handle_confirmation_callback,
             pattern=r"^confirm:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handlers.handle_clear_callback,
+            pattern=r"^clear:",
+        )
+    )
+    application.add_handler(
+        CallbackQueryHandler(
+            handlers.handle_save_callback,
+            pattern=r"^save:",
         )
     )
     application.add_handler(
@@ -72,9 +87,42 @@ def _build_application(settings: Settings) -> tuple[Application, handlers.BotCon
     return application, ctx
 
 
+async def _stale_timeout(
+    application: Application, ctx: handlers.BotContext, user_id: int
+) -> None:
+    """Exit discussion mode and notify the user when the stale timer fires."""
+    await discussion.exit_discussion(user_id, ctx.session_factory)
+    try:
+        await application.bot.send_message(
+            chat_id=user_id,
+            text="discussion idle too long - exiting discussion mode",
+        )
+    except Exception:
+        logger.exception("failed to notify user of stale-timeout exit")
+
+
 async def run_bot(settings: Settings) -> None:
     """Start the bot and block on the polling loop until SIGINT/SIGTERM."""
-    application, _ctx = _build_application(settings)
+    application, ctx = _build_application(settings)
+
+    user_id = settings.telegram.allowed_user_id
+    await discussion.restore_state(
+        user_id,
+        ctx.session_factory,
+        max_history=settings.discussion.max_history,
+    )
+
+    async def _on_timeout(uid: int) -> None:
+        await _stale_timeout(application, ctx, uid)
+
+    stale_task = asyncio.create_task(
+        discussion.stale_timer_task(
+            user_id,
+            ctx.session_factory,
+            settings.discussion.stale_minutes,
+            _on_timeout,
+        )
+    )
 
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -96,5 +144,10 @@ async def run_bot(settings: Settings) -> None:
             await stop_event.wait()
         finally:
             logger.info("stopping telegram polling")
+            stale_task.cancel()
+            try:
+                await stale_task
+            except (asyncio.CancelledError, Exception):
+                pass
             await updater.stop()
             await application.stop()

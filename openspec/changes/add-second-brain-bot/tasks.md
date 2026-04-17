@@ -55,15 +55,15 @@
 - [x] 7.6 Write integration test: chat handler with mocked AI
 
 ## 8. Discussion Mode
-- [ ] 8.1 Implement conversation context: rolling summary + recent message window (max_history from config)
-- [ ] 8.2 Implement compaction: summarize oldest messages into rolling summary when window overflows
-- [ ] 8.3 Implement /chat command to enter discussion mode
-- [ ] 8.4 Implement AI-based intent routing in categorization response
-- [ ] 8.5 Implement natural language exit detection (AI classifies exit intent)
-- [ ] 8.6 Implement stale conversation timeout as background asyncio task (stale_minutes from config), reset timer on each message, re-init on restart
-- [ ] 8.7 Implement /save command: AI summarizes discussion, confirm target project, append to notes, sync
-- [ ] 8.8 Persist discussion mode flag and rolling summary to SQLite, restore on restart
-- [ ] 8.9 Write integration test: discussion flow with save
+- [x] 8.1 Implement conversation context: rolling summary + recent message window (max_history from config)
+- [x] 8.2 Implement compaction: summarize oldest messages into rolling summary when window overflows
+- [x] 8.3 Implement /chat command to enter discussion mode
+- [x] 8.4 Implement AI-based intent routing in categorization response
+- [x] 8.5 Implement natural language exit detection (AI classifies exit intent)
+- [x] 8.6 Implement stale conversation timeout as background asyncio task (stale_minutes from config), reset timer on each message, re-init on restart
+- [x] 8.7 Implement /save command: AI summarizes discussion, confirm target project, append to notes, sync
+- [x] 8.8 Persist discussion mode flag and rolling summary to SQLite, restore on restart
+- [x] 8.9 Write integration test: discussion flow with save
 
 ## 9. Slash Commands
 - [ ] 9.1 /start - welcome message on first use, short ack on subsequent calls
