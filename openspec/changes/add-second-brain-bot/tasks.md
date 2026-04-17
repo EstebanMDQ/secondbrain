@@ -66,14 +66,14 @@
 - [x] 8.9 Write integration test: discussion flow with save
 
 ## 9. Slash Commands
-- [ ] 9.1 /start - welcome message on first use, short ack on subsequent calls
-- [ ] 9.2 /help - list all commands with descriptions
-- [ ] 9.3 /projects - list all projects with name and status
-- [ ] 9.4 /project <name> - show full project detail (resolve by name, slug, or alias)
-- [ ] 9.5 /export <name> - send project markdown file as Telegram document
+- [x] 9.1 /start - welcome message on first use, short ack on subsequent calls
+- [x] 9.2 /help - list all commands with descriptions
+- [x] 9.3 /projects - list all projects with name and status
+- [x] 9.4 /project <name> - show full project detail (resolve by name, slug, or alias)
+- [x] 9.5 /export <name> - send project markdown file as Telegram document
 - [ ] 9.6 /clear - wipe conversation context, exit discussion mode (with confirmation)
 - [ ] 9.7 /save - summarize and save discussion to project notes
-- [ ] 9.8 Write integration test: /export command with mocked DB
+- [x] 9.8 Write integration test: /export command with mocked DB
 
 ## 10. Integration and Polish
 - [ ] 10.1 Wire all components together: cli.py -> bot.py -> handlers -> services

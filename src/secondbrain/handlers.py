@@ -28,9 +28,28 @@ STATE_DISCUSSION_MODE = discussion.STATE_DISCUSSION_MODE
 STATE_PENDING_PREFIX = "pending_confirmation:"
 STATE_PENDING_SAVE = "pending_save"
 STATE_AWAITING_SAVE_NAME = "awaiting_save_name"
+STATE_HAS_STARTED = "has_started"
 
 _UPDATEABLE_FIELDS = frozenset(
     {"name", "description", "status", "notes", "stack", "tags", "aliases"}
+)
+
+COMMAND_DESCRIPTIONS: dict[str, str] = {
+    "/start": "welcome message and bot intro",
+    "/help": "show this list of commands",
+    "/projects": "list all projects with their status",
+    "/project <name>": "show full detail for a project",
+    "/export <name>": "send the project markdown file as a document",
+    "/chat": "enter discussion mode for back-and-forth",
+    "/save": "summarize the current discussion and save to a project",
+    "/clear": "wipe the discussion history (with confirmation)",
+}
+
+_WELCOME_MESSAGE = (
+    "welcome to second-brain\n\n"
+    "send any message and i'll categorize it into a project and sync it "
+    "to your obsidian vault. use /chat to talk things through before saving, "
+    "/projects to see what you've captured, and /help for the full command list."
 )
 
 
@@ -121,12 +140,129 @@ def _summarize_update(payload: dict[str, Any], project_name: str) -> str:
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Minimal /start placeholder - task 10 fills this in."""
+    """Send the welcome message on first use, a short ack on subsequent calls."""
     ctx = get_ctx(context)
     if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
         return
-    if update.message is not None:
-        await update.message.reply_text("welcome, use /help")
+    if update.message is None:
+        return
+
+    with ctx.session_factory() as session:
+        has_started = bool(store.get_state(session, STATE_HAS_STARTED, False))
+        if not has_started:
+            store.set_state(session, STATE_HAS_STARTED, True)
+            session.commit()
+
+    if has_started:
+        await update.message.reply_text("ready - /help for commands")
+    else:
+        await update.message.reply_text(_WELCOME_MESSAGE)
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List every registered command with a one-line description."""
+    ctx = get_ctx(context)
+    if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
+        return
+    if update.message is None:
+        return
+    lines = [f"{cmd} - {desc}" for cmd, desc in COMMAND_DESCRIPTIONS.items()]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def projects_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reply with a sorted list of every project and its status."""
+    ctx = get_ctx(context)
+    if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
+        return
+    if update.message is None:
+        return
+    with ctx.session_factory() as session:
+        projects = store.list_projects(session)
+
+    if not projects:
+        await update.message.reply_text(
+            "no projects yet - send a message to capture your first one"
+        )
+        return
+
+    projects.sort(key=lambda p: p.name.lower())
+    lines = [f"{p.name} - {p.status or 'no status'}" for p in projects]
+    await update.message.reply_text("\n".join(lines))
+
+
+def _format_project_detail(project: store.Project) -> str:
+    stack = ", ".join(project.stack or []) or "-"
+    tags = ", ".join(project.tags or []) or "-"
+    description = project.description or "-"
+    note_count = len(project.notes or [])
+    return (
+        f"name: {project.name}\n"
+        f"slug: {project.slug}\n"
+        f"status: {project.status or '-'}\n"
+        f"stack: {stack}\n"
+        f"tags: {tags}\n"
+        f"description: {description}\n"
+        f"notes: {note_count}"
+    )
+
+
+async def project_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Render the full stored detail for a single project."""
+    ctx = get_ctx(context)
+    if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
+        return
+    if update.message is None:
+        return
+    if not context.args:
+        await update.message.reply_text("usage: /project <name>")
+        return
+    query = " ".join(context.args).strip()
+
+    with ctx.session_factory() as session:
+        project = store.get_project(session, query)
+        if project is None:
+            await update.message.reply_text(f"no project matches '{query}'")
+            return
+        detail = _format_project_detail(project)
+
+    await update.message.reply_text(detail)
+
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send the project's markdown file from the vault as a Telegram document."""
+    ctx = get_ctx(context)
+    if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
+        return
+    if update.message is None:
+        return
+    if not context.args:
+        await update.message.reply_text("usage: /export <name>")
+        return
+    query = " ".join(context.args).strip()
+
+    with ctx.session_factory() as session:
+        project = store.get_project(session, query)
+        if project is None:
+            await update.message.reply_text(f"no project matches '{query}'")
+            return
+        snapshot = _snapshot(project)
+
+    path = ctx.vault_path / ctx.vault_subfolder / f"{snapshot.slug}.md"
+    if not path.exists():
+        path = obsidian.write_project_file(
+            ctx.vault_path, ctx.vault_subfolder, snapshot
+        )
+
+    chat = update.effective_chat
+    if chat is None:
+        return
+    with path.open("rb") as fh:
+        await context.bot.send_document(
+            chat_id=chat.id,
+            document=fh,
+            filename=f"{snapshot.slug}.md",
+        )
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
