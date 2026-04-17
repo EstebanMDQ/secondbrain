@@ -8,9 +8,9 @@
 - [ ] 1.5 Add LICENSE file
 
 ## 2. CLI and Configuration
-- [ ] 2.1 Implement cli.py with click: `second-brain init`, `run`, `install-service`, `uninstall-service`, `status`
+- [x] 2.1 Implement cli.py with click: `second-brain init`, `run`, `install-service`, `uninstall-service`, `status`
 - [x] 2.2 Implement config.py: load TOML config from ~/.config/second-brain/config.toml, env var overrides (SECONDBRAIN_ prefix)
-- [ ] 2.3 Implement `second-brain init` interactive wizard (prompt for all settings, validate vault is a git repo with remote, write config.toml, create data dir)
+- [x] 2.3 Implement `second-brain init` interactive wizard (prompt for all settings, validate vault is a git repo with remote, write config.toml, create data dir)
 - [x] 2.4 Validate config on startup, fail fast with clear error messages
 - [x] 2.5 Write unit test: config loading, env var override, missing config error
 
