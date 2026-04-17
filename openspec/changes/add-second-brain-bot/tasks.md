@@ -21,16 +21,16 @@
 - [ ] 3.4 Implement `second-brain status` command (service state, config path, DB path, project count)
 
 ## 4. Project Store (SQLite)
-- [ ] 4.1 Define SQLAlchemy model for Project (id, name, description, stack, tags, status, notes, aliases)
-- [ ] 4.2 Add state table for discussion mode flag, rolling summary, and pending confirmations
-- [ ] 4.3 Implement create_all initialization (DB at XDG_DATA_HOME/second-brain/brain.db)
-- [ ] 4.4 Implement CRUD: create_project, get_project, update_project, list_projects
-- [ ] 4.5 Implement project lookup by name, slug, or alias
-- [ ] 4.6 Implement alias management (add alias on new name match)
-- [ ] 4.7 Implement slug collision detection
-- [ ] 4.8 Implement note deduplication on upsert (case-insensitive, whitespace-stripped)
-- [ ] 4.9 Implement field update with omit-means-no-change semantics
-- [ ] 4.10 Write unit tests: upsert/merge, note dedup, alias lookup, slug collision, field update semantics
+- [x] 4.1 Define SQLAlchemy model for Project (id, name, description, stack, tags, status, notes, aliases)
+- [x] 4.2 Add state table for discussion mode flag, rolling summary, and pending confirmations
+- [x] 4.3 Implement create_all initialization (DB at XDG_DATA_HOME/second-brain/brain.db)
+- [x] 4.4 Implement CRUD: create_project, get_project, update_project, list_projects
+- [x] 4.5 Implement project lookup by name, slug, or alias
+- [x] 4.6 Implement alias management (add alias on new name match)
+- [x] 4.7 Implement slug collision detection
+- [x] 4.8 Implement note deduplication on upsert (case-insensitive, whitespace-stripped)
+- [x] 4.9 Implement field update with omit-means-no-change semantics
+- [x] 4.10 Write unit tests: upsert/merge, note dedup, alias lookup, slug collision, field update semantics
 
 ## 5. AI Provider
 - [ ] 5.1 Implement OpenAI-compatible client wrapper with two-tier config and configurable timeout

@@ -7,7 +7,9 @@ authors = [
     { name = "Esteban Soler", email = "esteban.soler@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "sqlalchemy>=2",
+]
 
 [project.scripts]
 second-brain = "secondbrain.cli:main"
