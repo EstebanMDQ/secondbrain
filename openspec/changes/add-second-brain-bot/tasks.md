@@ -15,10 +15,10 @@
 - [x] 2.5 Write unit test: config loading, env var override, missing config error
 
 ## 3. Service Installation
-- [ ] 3.1 Implement service.py: detect OS (Linux/macOS)
-- [ ] 3.2 Implement systemd user unit generation and install/uninstall (Linux)
-- [ ] 3.3 Implement launchd plist generation and load/unload (macOS)
-- [ ] 3.4 Implement `second-brain status` command (service state, config path, DB path, project count)
+- [x] 3.1 Implement service.py: detect OS (Linux/macOS)
+- [x] 3.2 Implement systemd user unit generation and install/uninstall (Linux)
+- [x] 3.3 Implement launchd plist generation and load/unload (macOS)
+- [x] 3.4 Implement `second-brain status` command (service state, config path, DB path, project count)
 
 ## 4. Project Store (SQLite)
 - [x] 4.1 Define SQLAlchemy model for Project (id, name, description, stack, tags, status, notes, aliases)
