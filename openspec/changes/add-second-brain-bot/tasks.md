@@ -76,7 +76,7 @@
 - [x] 9.8 Write integration test: /export command with mocked DB
 
 ## 10. Integration and Polish
-- [ ] 10.1 Wire all components together: cli.py -> bot.py -> handlers -> services
-- [ ] 10.2 End-to-end manual test: install package, run init, start service, test via Telegram
-- [ ] 10.3 Write README.md with installation, setup, usage, and Docker instructions
-- [ ] 10.4 Update openspec/project.md if conventions changed during implementation
+- [x] 10.1 Wire all components together: cli.py -> bot.py -> handlers -> services
+- [ ] 10.2 End-to-end manual test: install package, run init, start service, test via Telegram (manual; requires real Telegram token and vault)
+- [x] 10.3 Write README.md with installation, setup, usage, and Docker instructions
+- [x] 10.4 Update openspec/project.md if conventions changed during implementation (no deviations; left as-is)
