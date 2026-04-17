@@ -64,6 +64,43 @@ def test_create_project_roundtrip(session: Session) -> None:
     assert fetched.aliases == ["My Auth Service"]
 
 
+def test_create_project_with_ideas(session: Session) -> None:
+    project = create_project(
+        session,
+        name="Idea Holder",
+        description="tagline",
+        ideas="Long-form prose.\n\nMultiple paragraphs.",
+    )
+    session.commit()
+
+    fetched = get_project(session, str(project.id))
+    assert fetched is not None
+    assert fetched.ideas == "Long-form prose.\n\nMultiple paragraphs."
+
+
+def test_create_project_defaults_ideas_to_none(session: Session) -> None:
+    project = create_project(session, name="No Ideas")
+    session.commit()
+
+    session.refresh(project)
+    assert project.ideas is None
+
+
+def test_update_project_ideas_overwrites(session: Session) -> None:
+    project = create_project(session, name="Editable Ideas", ideas="first draft")
+    session.commit()
+
+    update_project(session, project.id, ideas="rewritten")
+    session.commit()
+    session.refresh(project)
+    assert project.ideas == "rewritten"
+
+    update_project(session, project.id, ideas=None)
+    session.commit()
+    session.refresh(project)
+    assert project.ideas is None
+
+
 def test_slug_collision_appends_suffix(session: Session) -> None:
     first = create_project(session, name="Widget")
     second = create_project(session, name="Widget")

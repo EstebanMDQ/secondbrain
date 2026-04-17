@@ -28,6 +28,7 @@ class Project(Base):
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(String, nullable=True)
+    ideas: Mapped[str | None] = mapped_column(String, nullable=True)
     stack: Mapped[list[str]] = mapped_column(JSON, default=list)
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     status: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -110,6 +111,7 @@ def create_project(
     name: str,
     slug: str | None = None,
     description: str | None = None,
+    ideas: str | None = None,
     stack: list[str] | None = None,
     tags: list[str] | None = None,
     status: str | None = None,
@@ -128,6 +130,7 @@ def create_project(
         slug=final_slug,
         name=name,
         description=description,
+        ideas=ideas,
         stack=list(stack) if stack is not None else [],
         tags=list(tags) if tags is not None else [],
         status=status,
@@ -198,7 +201,7 @@ def update_project(session: Session, project_id: int, **fields: Any) -> Project:
             project.tags = _union_append(list(project.tags or []), list(value or []))
         elif key == "stack":
             project.stack = list(value) if value is not None else []
-        elif key in {"name", "description", "status", "slug"}:
+        elif key in {"name", "description", "ideas", "status", "slug"}:
             setattr(project, key, value)
         else:
             raise ValueError(f"unknown project field: {key}")

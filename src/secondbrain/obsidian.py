@@ -32,6 +32,7 @@ class ProjectLike(Protocol):
     stack: list[str]
     tags: list[str]
     description: str | None
+    ideas: str | None
     notes: list[str]
 
 
@@ -54,8 +55,9 @@ def _project_field(project: Any, field: str, default: Any) -> Any:
 def render_project_md(project: Any) -> str:
     """Render a project as a markdown string with YAML frontmatter.
 
-    The frontmatter includes name, status, stack, tags, and description. A
-    ``## Notes`` section is appended when the project has any notes.
+    The frontmatter includes name, status, stack, tags, and description. An
+    ``## Ideas`` section is appended when the project has ideas content, and
+    a ``## Notes`` section is appended when the project has any notes.
     """
     frontmatter: dict[str, Any] = {
         "name": _project_field(project, "name", ""),
@@ -72,6 +74,12 @@ def render_project_md(project: Any) -> str:
     )
 
     parts = ["---\n", yaml_text, "---\n"]
+
+    ideas = _project_field(project, "ideas", None)
+    if ideas and str(ideas).strip():
+        parts.append("\n## Ideas\n\n")
+        parts.append(str(ideas).strip())
+        parts.append("\n")
 
     notes = list(_project_field(project, "notes", []) or [])
     if notes:

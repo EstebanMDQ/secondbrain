@@ -234,6 +234,86 @@ def uninstall_service_cmd() -> None:
     click.echo("Service uninstalled.")
 
 
+@main.command("import-vault")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Report what would happen without writing to the DB or files.",
+)
+def import_vault_cmd(dry_run: bool) -> None:
+    """Import existing project markdown files from the vault into the DB.
+
+    Scans ``<vault_path>/<subfolder>/*.md``, parses each file for name,
+    description, ideas, and stack, inserts new rows into the project DB, and
+    rewrites the file in the bot's canonical format. Files whose slug already
+    exists in the DB are skipped.
+    """
+    from secondbrain import obsidian, store, vault_import
+
+    try:
+        settings = config.load_config()
+    except config.ConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    target_dir = Path(settings.obsidian.vault_path) / settings.obsidian.subfolder
+    if not target_dir.is_dir():
+        raise click.ClickException(f"projects folder does not exist: {target_dir}")
+
+    files = sorted(target_dir.glob("*.md"))
+    if not files:
+        click.echo(f"no markdown files found in {target_dir}")
+        return
+
+    engine = store.init_db(config.db_path())
+    imported = 0
+    skipped = 0
+    rewritten = 0
+
+    with store.Session(engine) as session:
+        for path in files:
+            try:
+                parsed = vault_import.parse_file(path)
+            except Exception as exc:
+                click.echo(f"skip {path.name}: parse error ({exc})", err=True)
+                continue
+
+            existing = store.get_project(session, parsed.name)
+            if existing is not None:
+                click.echo(f"skip {path.name}: project {existing.slug!r} already exists")
+                skipped += 1
+                continue
+
+            if dry_run:
+                click.echo(f"would import {path.name} -> {parsed.name!r}")
+                imported += 1
+                continue
+
+            project = store.create_project(
+                session,
+                name=parsed.name,
+                description=parsed.description,
+                ideas=parsed.ideas,
+                stack=parsed.stack,
+                tags=parsed.tags,
+                status=parsed.status,
+            )
+            session.flush()
+            new_text = obsidian.render_project_md(project)
+            if new_text != path.read_text(encoding="utf-8"):
+                path.write_text(new_text, encoding="utf-8")
+                rewritten += 1
+            click.echo(f"imported {path.name} -> {project.slug}")
+            imported += 1
+
+        if not dry_run:
+            session.commit()
+
+    click.echo(
+        f"done: imported={imported} skipped={skipped} rewritten={rewritten}"
+        + (" (dry-run)" if dry_run else "")
+    )
+
+
 @main.command("status")
 def status_cmd() -> None:
     """Show config path, DB path, project count, and service status."""

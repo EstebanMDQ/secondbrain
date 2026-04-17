@@ -24,6 +24,7 @@ class FakeProject:
     stack: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     description: str | None = None
+    ideas: str | None = None
     notes: list[str] = field(default_factory=list)
 
 
@@ -106,6 +107,32 @@ def test_render_project_md_without_notes_or_tags() -> None:
         "---\n"
     )
     assert render_project_md(project) == expected
+
+
+def test_render_project_md_with_ideas_section() -> None:
+    project = FakeProject(
+        name="Widget",
+        slug="widget",
+        description="short tagline",
+        ideas="Long-form prose describing the idea.\n\nA second paragraph of detail.",
+        notes=["note one"],
+    )
+    rendered = render_project_md(project)
+    assert "## Ideas\n\nLong-form prose describing the idea.\n\nA second paragraph of detail.\n" in rendered
+    # Ideas must come before Notes.
+    assert rendered.index("## Ideas") < rendered.index("## Notes")
+
+
+def test_render_project_md_ideas_only_no_notes() -> None:
+    project = FakeProject(name="Widget", slug="widget", ideas="just the idea")
+    rendered = render_project_md(project)
+    assert rendered.endswith("## Ideas\n\njust the idea\n")
+
+
+def test_render_project_md_empty_ideas_omitted() -> None:
+    project = FakeProject(name="Widget", slug="widget", ideas="   ")
+    rendered = render_project_md(project)
+    assert "## Ideas" not in rendered
 
 
 def test_render_project_md_accepts_mapping() -> None:

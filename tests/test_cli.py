@@ -38,7 +38,14 @@ def test_help_lists_all_commands() -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["--help"])
     assert result.exit_code == 0
-    for cmd in ("init", "run", "install-service", "uninstall-service", "status"):
+    for cmd in (
+        "init",
+        "run",
+        "install-service",
+        "uninstall-service",
+        "status",
+        "import-vault",
+    ):
         assert cmd in result.output
 
 
@@ -150,3 +157,88 @@ def test_init_rejects_vault_without_git(tmp_path: Path, monkeypatch: pytest.Monk
     result = runner.invoke(main, ["init"], input=inputs)
     assert result.exit_code != 0
     assert "not a git repository" in result.output
+
+
+def test_import_vault_ingests_and_rewrites_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    vault = tmp_path / "vault"
+    projects_dir = vault / "Projects"
+    projects_dir.mkdir(parents=True)
+
+    (projects_dir / "alpha.md").write_text(
+        "# alpha\n\nfirst tagline.\n\n## Idea\n\nalpha idea body.\n\n"
+        "## Stack\n\n- python\n- sqlite\n",
+        encoding="utf-8",
+    )
+    (projects_dir / "beta.md").write_text(
+        "# beta\n\nsecond tagline.\n\n## Ideas\n\nbeta idea body.\n",
+        encoding="utf-8",
+    )
+
+    settings = _build_settings(vault)
+    settings = config.Settings(
+        log_level=settings.log_level,
+        telegram=settings.telegram,
+        ai=settings.ai,
+        discussion=settings.discussion,
+        obsidian=config.ObsidianSettings(vault_path=vault, subfolder="Projects"),
+    )
+
+    runner = CliRunner()
+    with patch.object(config, "load_config", return_value=settings):
+        result = runner.invoke(main, ["import-vault"])
+
+    assert result.exit_code == 0, result.output
+    assert "imported=2" in result.output
+
+    # Files rewritten with frontmatter + Ideas section.
+    alpha_text = (projects_dir / "alpha.md").read_text(encoding="utf-8")
+    assert alpha_text.startswith("---\n")
+    assert "name: alpha" in alpha_text
+    assert "description: first tagline." in alpha_text
+    assert "## Ideas\n\nalpha idea body.\n" in alpha_text
+
+    beta_text = (projects_dir / "beta.md").read_text(encoding="utf-8")
+    assert "## Ideas\n\nbeta idea body.\n" in beta_text
+
+    # Second run is a no-op (both slugs already in DB).
+    with patch.object(config, "load_config", return_value=settings):
+        rerun = runner.invoke(main, ["import-vault"])
+    assert rerun.exit_code == 0, rerun.output
+    assert "imported=0" in rerun.output
+    assert "skipped=2" in rerun.output
+
+
+def test_import_vault_dry_run_does_not_touch_files_or_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    vault = tmp_path / "vault"
+    projects_dir = vault / "Projects"
+    projects_dir.mkdir(parents=True)
+
+    original = "# alpha\n\ntagline.\n\n## Idea\n\nbody.\n"
+    (projects_dir / "alpha.md").write_text(original, encoding="utf-8")
+
+    settings = config.Settings(
+        log_level="info",
+        telegram=config.TelegramSettings(token="t", allowed_user_id=1),
+        ai=config.AISettings(
+            categorization=config.AIProviderSettings(base_url="u", api_key="k", model="m"),
+            discussion=config.AIProviderSettings(base_url="u", api_key="k", model="m"),
+            timeout_seconds=30,
+        ),
+        discussion=config.DiscussionSettings(max_history=20, stale_minutes=30),
+        obsidian=config.ObsidianSettings(vault_path=vault, subfolder="Projects"),
+    )
+
+    runner = CliRunner()
+    with patch.object(config, "load_config", return_value=settings):
+        result = runner.invoke(main, ["import-vault", "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert "would import" in result.output
+    # File must be untouched.
+    assert (projects_dir / "alpha.md").read_text(encoding="utf-8") == original
