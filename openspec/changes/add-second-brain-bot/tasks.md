@@ -33,12 +33,12 @@
 - [x] 4.10 Write unit tests: upsert/merge, note dedup, alias lookup, slug collision, field update semantics
 
 ## 5. AI Provider
-- [ ] 5.1 Implement OpenAI-compatible client wrapper with two-tier config and configurable timeout
-- [ ] 5.2 Write categorization prompt template (include existing project names and aliases, instruct to omit unknown fields)
-- [ ] 5.3 Implement defensive JSON response parser (try parse -> extract block -> fallback)
-- [ ] 5.4 Write discussion prompt with conversation history + rolling summary injection
-- [ ] 5.5 Write compaction prompt for summarizing overflowing messages into rolling summary
-- [ ] 5.6 Write unit tests: response parser (all three fallback cases), timeout handling
+- [x] 5.1 Implement OpenAI-compatible client wrapper with two-tier config and configurable timeout
+- [x] 5.2 Write categorization prompt template (include existing project names and aliases, instruct to omit unknown fields)
+- [x] 5.3 Implement defensive JSON response parser (try parse -> extract block -> fallback)
+- [x] 5.4 Write discussion prompt with conversation history + rolling summary injection
+- [x] 5.5 Write compaction prompt for summarizing overflowing messages into rolling summary
+- [x] 5.6 Write unit tests: response parser (all three fallback cases), timeout handling
 
 ## 6. Obsidian Sync
 - [ ] 6.1 Implement markdown file writer with YAML frontmatter and notes section
