@@ -104,6 +104,7 @@ compose file and are persisted across restarts.
 - `/help` - show this list of commands
 - `/projects` - list all projects with their status
 - `/project <name>` - show full detail for a project
+- `/new <name>` - create a project by name; put a description on the next line, or after ` - ` on the same line
 - `/export <name>` - send the project markdown file as a document
 - `/chat` - enter discussion mode for back-and-forth
 - `/save` - summarize the current discussion and save to a project

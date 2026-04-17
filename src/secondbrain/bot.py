@@ -62,6 +62,7 @@ def _build_application(settings: Settings) -> tuple[Application, handlers.BotCon
     application.add_handler(CommandHandler("help", handlers.help_command))
     application.add_handler(CommandHandler("projects", handlers.projects_command))
     application.add_handler(CommandHandler("project", handlers.project_command))
+    application.add_handler(CommandHandler("new", handlers.new_project_command))
     application.add_handler(CommandHandler("export", handlers.export_command))
     application.add_handler(CommandHandler("chat", handlers.chat_command))
     application.add_handler(CommandHandler("clear", handlers.clear_command))

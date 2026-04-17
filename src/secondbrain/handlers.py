@@ -39,6 +39,7 @@ COMMAND_DESCRIPTIONS: dict[str, str] = {
     "/help": "show this list of commands",
     "/projects": "list all projects with their status",
     "/project <name>": "show full detail for a project",
+    "/new <name>": "create a project (optional description on next line or after ' - ')",
     "/export <name>": "send the project markdown file as a document",
     "/chat": "enter discussion mode for back-and-forth",
     "/save": "summarize the current discussion and save to a project",
@@ -74,6 +75,7 @@ class _ProjectSnapshot:
     stack: list[str]
     tags: list[str]
     description: str | None
+    ideas: str | None
     notes: list[str]
 
 
@@ -85,8 +87,34 @@ def _snapshot(project: store.Project) -> _ProjectSnapshot:
         stack=list(project.stack or []),
         tags=list(project.tags or []),
         description=project.description,
+        ideas=project.ideas,
         notes=list(project.notes or []),
     )
+
+
+def parse_new_project_args(raw: str) -> tuple[str, str | None]:
+    """Split the raw argument text for `/new` into (name, description).
+
+    If the payload contains a newline, the first line becomes the name and
+    the remaining lines (joined with newlines) become the description.
+    Otherwise, a `` - `` (space-dash-space) separator splits the line into
+    name and description. If neither form applies, the entire payload is
+    treated as the name with no description. Returns a stripped name (may
+    be empty) and a stripped non-empty description or ``None``.
+    """
+    if "\n" in raw:
+        first, rest = raw.split("\n", 1)
+        name = first.strip()
+        description = rest.strip() or None
+        return name, description
+
+    if " - " in raw:
+        first, rest = raw.split(" - ", 1)
+        name = first.strip()
+        description = rest.strip() or None
+        return name, description
+
+    return raw.strip(), None
 
 
 def get_ctx(context: ContextTypes.DEFAULT_TYPE) -> BotContext:
@@ -227,6 +255,77 @@ async def project_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         detail = _format_project_detail(project)
 
     await update.message.reply_text(detail)
+
+
+def _extract_raw_args(message_text: str | None, command: str) -> str:
+    """Return the text after ``/command`` (and any ``@bot`` suffix) as-is.
+
+    Preserves newlines so multi-line command payloads (used by ``/new``)
+    survive ``context.args`` whitespace-splitting.
+    """
+    if not message_text:
+        return ""
+    if not message_text.startswith(f"/{command}"):
+        return ""
+    after = message_text[len(command) + 1:]
+    if after.startswith("@"):
+        _, _, after = after.partition(" ")
+    elif after.startswith(" ") or after.startswith("\n"):
+        after = after[1:]
+    elif after:
+        return ""
+    return after
+
+
+async def new_project_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Create a project from an explicit ``/new <name>[ - desc | \\ndesc]`` command."""
+    ctx = get_ctx(context)
+    if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
+        return
+    if update.message is None:
+        return
+
+    raw = _extract_raw_args(update.message.text, "new")
+    name, description = parse_new_project_args(raw)
+
+    if not name:
+        await update.message.reply_text(
+            "usage: /new <name>\n"
+            "optional description: put it on the next line, or after ' - '"
+        )
+        return
+
+    with ctx.session_factory() as session:
+        existing = store.get_project(session, name)
+        if existing is not None:
+            await update.message.reply_text(
+                f"'{name}' collides with existing project "
+                f"'{existing.name}' (slug: {existing.slug})"
+            )
+            return
+
+        project = store.create_project(
+            session,
+            name=name,
+            description=description,
+        )
+        session.commit()
+        session.refresh(project)
+        snapshot = _snapshot(project)
+
+    result = await obsidian.sync_project_async(
+        ctx.vault_path, ctx.vault_subfolder, snapshot
+    )
+    if result.status in ("ok", "noop"):
+        await update.message.reply_text(f"created '{snapshot.name}' (slug: {snapshot.slug})")
+    elif result.status == "conflict":
+        await update.message.reply_text(
+            f"created '{snapshot.name}' but git rebase conflicted - see {result.path.name}"
+        )
+    else:
+        await update.message.reply_text(
+            f"created '{snapshot.name}' but sync failed: {result.message}"
+        )
 
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

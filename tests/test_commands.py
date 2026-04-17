@@ -83,7 +83,17 @@ async def test_help_lists_all_commands(tmp_path: Path) -> None:
     await handlers.help_command(update, tg_ctx)
 
     reply = update.message.reply_text.await_args.args[0]
-    for cmd in ("/start", "/help", "/projects", "/project", "/export", "/chat", "/save", "/clear"):
+    for cmd in (
+        "/start",
+        "/help",
+        "/projects",
+        "/project",
+        "/new",
+        "/export",
+        "/chat",
+        "/save",
+        "/clear",
+    ):
         assert cmd in reply
 
 
@@ -225,6 +235,216 @@ async def test_commands_drop_unauthorized(tmp_path: Path) -> None:
 
     update.message.reply_text.assert_not_called()
     tg_ctx.bot.send_document.assert_not_called()
+
+
+def test_parse_new_project_args_name_only() -> None:
+    assert handlers.parse_new_project_args("Widget") == ("Widget", None)
+    assert handlers.parse_new_project_args("  Widget  ") == ("Widget", None)
+    assert handlers.parse_new_project_args("") == ("", None)
+
+
+def test_parse_new_project_args_dash_shorthand() -> None:
+    assert handlers.parse_new_project_args("Widget - a thing") == ("Widget", "a thing")
+    # Only the first " - " splits; subsequent dashes stay in the description.
+    assert handlers.parse_new_project_args("Widget - a - dashed - thing") == (
+        "Widget",
+        "a - dashed - thing",
+    )
+
+
+def test_parse_new_project_args_multiline() -> None:
+    raw = "Widget\nmulti-line\ndescription"
+    assert handlers.parse_new_project_args(raw) == ("Widget", "multi-line\ndescription")
+
+
+def test_parse_new_project_args_multiline_wins_over_dash() -> None:
+    raw = "part - a\nreal description"
+    # Multi-line form wins: first line (including the dash) is the full name.
+    assert handlers.parse_new_project_args(raw) == ("part - a", "real description")
+
+
+def test_parse_new_project_args_empty_description_is_none() -> None:
+    assert handlers.parse_new_project_args("Widget - ") == ("Widget", None)
+    assert handlers.parse_new_project_args("Widget\n   ") == ("Widget", None)
+
+
+def _new_update_context(
+    ctx: handlers.BotContext,
+    message_text: str,
+    *,
+    user_id: int = 42,
+) -> tuple[MagicMock, MagicMock]:
+    update, tg_ctx = _fake_update_context(ctx, user_id=user_id)
+    update.message.text = message_text
+    return update, tg_ctx
+
+
+async def test_new_project_creates_with_name_only(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+    sync_mock = AsyncMock(return_value=obsidian.SyncResult(status="ok", path=Path("x.md")))
+    monkeypatch.setattr(handlers.obsidian, "sync_project_async", sync_mock)
+
+    update, tg_ctx = _new_update_context(ctx, "/new Widget")
+    await handlers.new_project_command(update, tg_ctx)
+
+    with session_factory() as session:
+        project = store.get_project(session, "Widget")
+    assert project is not None
+    assert project.description is None
+    assert project.slug == "widget"
+
+    sync_mock.assert_awaited_once()
+    reply = update.message.reply_text.await_args.args[0]
+    assert "Widget" in reply
+    assert "widget" in reply
+
+
+async def test_new_project_with_multiline_description(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+    monkeypatch.setattr(
+        handlers.obsidian,
+        "sync_project_async",
+        AsyncMock(return_value=obsidian.SyncResult(status="ok", path=Path("x.md"))),
+    )
+
+    update, tg_ctx = _new_update_context(
+        ctx, "/new My Project\nLong-form\ndescription."
+    )
+    await handlers.new_project_command(update, tg_ctx)
+
+    with session_factory() as session:
+        project = store.get_project(session, "My Project")
+    assert project is not None
+    assert project.description == "Long-form\ndescription."
+
+
+async def test_new_project_with_dash_shorthand(tmp_path: Path, monkeypatch) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+    monkeypatch.setattr(
+        handlers.obsidian,
+        "sync_project_async",
+        AsyncMock(return_value=obsidian.SyncResult(status="ok", path=Path("x.md"))),
+    )
+
+    update, tg_ctx = _new_update_context(ctx, "/new Widget - a one-liner")
+    await handlers.new_project_command(update, tg_ctx)
+
+    with session_factory() as session:
+        project = store.get_project(session, "Widget")
+    assert project is not None
+    assert project.description == "a one-liner"
+
+
+async def test_new_project_rejects_collision_by_alias(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+    with session_factory() as session:
+        store.create_project(
+            session, name="Widget", aliases=["widget-alt", "Widget Thing"]
+        )
+        session.commit()
+
+    sync_mock = AsyncMock()
+    monkeypatch.setattr(handlers.obsidian, "sync_project_async", sync_mock)
+
+    update, tg_ctx = _new_update_context(ctx, "/new widget-alt")
+    await handlers.new_project_command(update, tg_ctx)
+
+    reply = update.message.reply_text.await_args.args[0]
+    assert "collides" in reply.lower()
+    assert "Widget" in reply
+    assert "widget" in reply  # slug in message
+    sync_mock.assert_not_awaited()
+
+    with session_factory() as session:
+        projects = store.list_projects(session)
+    assert len(projects) == 1
+
+
+async def test_new_project_rejects_case_insensitive_collision(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+    with session_factory() as session:
+        store.create_project(session, name="Foo")
+        session.commit()
+
+    monkeypatch.setattr(handlers.obsidian, "sync_project_async", AsyncMock())
+
+    update, tg_ctx = _new_update_context(ctx, "/new FOO")
+    await handlers.new_project_command(update, tg_ctx)
+
+    reply = update.message.reply_text.await_args.args[0]
+    assert "collides" in reply.lower()
+
+
+async def test_new_project_empty_name_shows_usage(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ctx, _ = _make_ctx(tmp_path)
+    sync_mock = AsyncMock()
+    monkeypatch.setattr(handlers.obsidian, "sync_project_async", sync_mock)
+
+    update, tg_ctx = _new_update_context(ctx, "/new")
+    await handlers.new_project_command(update, tg_ctx)
+
+    reply = update.message.reply_text.await_args.args[0]
+    assert "usage" in reply.lower()
+    sync_mock.assert_not_awaited()
+
+
+async def test_new_project_does_not_trigger_discussion_or_ai(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ctx, _ = _make_ctx(tmp_path)
+    monkeypatch.setattr(
+        handlers.obsidian,
+        "sync_project_async",
+        AsyncMock(return_value=obsidian.SyncResult(status="ok", path=Path("x.md"))),
+    )
+
+    update, tg_ctx = _new_update_context(ctx, "/new Widget")
+    await handlers.new_project_command(update, tg_ctx)
+
+    # Categorization AI is exposed via ctx.ai_clients (a MagicMock) - none of
+    # its methods should have been called.
+    assert not ctx.ai_clients.method_calls
+    assert not ctx.ai_clients.mock_calls
+
+
+async def test_new_project_surfaces_sync_conflict(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ctx, _ = _make_ctx(tmp_path)
+    conflict = obsidian.SyncResult(
+        status="conflict", path=Path("widget.conflict.md"), message="rebase failed"
+    )
+    monkeypatch.setattr(
+        handlers.obsidian, "sync_project_async", AsyncMock(return_value=conflict)
+    )
+
+    update, tg_ctx = _new_update_context(ctx, "/new Widget")
+    await handlers.new_project_command(update, tg_ctx)
+
+    reply = update.message.reply_text.await_args.args[0]
+    assert "conflict" in reply.lower() or "widget.conflict.md" in reply
+
+
+async def test_new_project_drops_unauthorized(tmp_path: Path, monkeypatch) -> None:
+    ctx, _ = _make_ctx(tmp_path)
+    sync_mock = AsyncMock()
+    monkeypatch.setattr(handlers.obsidian, "sync_project_async", sync_mock)
+
+    update, tg_ctx = _new_update_context(ctx, "/new Widget", user_id=1)
+    await handlers.new_project_command(update, tg_ctx)
+
+    update.message.reply_text.assert_not_called()
+    sync_mock.assert_not_awaited()
 
 
 async def test_export_uses_write_project_file_when_missing(
