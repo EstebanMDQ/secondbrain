@@ -132,6 +132,39 @@ def test_env_override_replaces_file_value(tmp_path: Path, monkeypatch: pytest.Mo
     assert settings.ai.timeout_seconds == 99
 
 
+def test_capture_fuzzy_threshold_defaults_to_85(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+
+    settings = load_config(config_path)
+
+    assert settings.capture.fuzzy_threshold == 85
+
+
+def test_capture_fuzzy_threshold_toml_override(tmp_path: Path) -> None:
+    config_path = _write_config(
+        tmp_path,
+        extra="[capture]\nfuzzy_threshold = 70",
+    )
+
+    settings = load_config(config_path)
+
+    assert settings.capture.fuzzy_threshold == 70
+
+
+def test_capture_fuzzy_threshold_env_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = _write_config(
+        tmp_path,
+        extra="[capture]\nfuzzy_threshold = 70",
+    )
+    monkeypatch.setenv("SECONDBRAIN_CAPTURE_FUZZY_THRESHOLD", "92")
+
+    settings = load_config(config_path)
+
+    assert settings.capture.fuzzy_threshold == 92
+
+
 def test_missing_required_field_raises_config_error(tmp_path: Path) -> None:
     config_path = _write_config(tmp_path, omit={"telegram"})
 

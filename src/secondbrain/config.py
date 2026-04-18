@@ -38,6 +38,11 @@ class DiscussionSettings:
 
 
 @dataclass(frozen=True)
+class CaptureSettings:
+    fuzzy_threshold: int = 85
+
+
+@dataclass(frozen=True)
 class ObsidianSettings:
     vault_path: Path = Path()
     subfolder: str = "projects"
@@ -49,6 +54,7 @@ class Settings:
     telegram: TelegramSettings = field(default_factory=TelegramSettings)
     ai: AISettings = field(default_factory=AISettings)
     discussion: DiscussionSettings = field(default_factory=DiscussionSettings)
+    capture: CaptureSettings = field(default_factory=CaptureSettings)
     obsidian: ObsidianSettings = field(default_factory=ObsidianSettings)
 
 
@@ -122,6 +128,15 @@ def _build_settings(raw: dict[str, Any]) -> Settings:
         ),
     )
 
+    capture_raw = raw.get("capture", {})
+    if not isinstance(capture_raw, dict):
+        raise ConfigError("capture: expected table")
+    capture = CaptureSettings(
+        fuzzy_threshold=_coerce_int(
+            capture_raw.get("fuzzy_threshold", defaults.capture.fuzzy_threshold)
+        ),
+    )
+
     obsidian_raw = raw.get("obsidian", {})
     if not isinstance(obsidian_raw, dict):
         raise ConfigError("obsidian: expected table")
@@ -136,6 +151,7 @@ def _build_settings(raw: dict[str, Any]) -> Settings:
         telegram=telegram,
         ai=ai,
         discussion=discussion,
+        capture=capture,
         obsidian=obsidian,
     )
 
@@ -155,6 +171,7 @@ _ENV_MAP: dict[str, tuple[tuple[str, ...], str]] = {
     "ai_timeout_seconds": (("ai", "timeout_seconds"), "int"),
     "discussion_max_history": (("discussion", "max_history"), "int"),
     "discussion_stale_minutes": (("discussion", "stale_minutes"), "int"),
+    "capture_fuzzy_threshold": (("capture", "fuzzy_threshold"), "int"),
     "obsidian_vault_path": (("obsidian", "vault_path"), "path"),
     "obsidian_subfolder": (("obsidian", "subfolder"), "str"),
 }

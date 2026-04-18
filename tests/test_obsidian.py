@@ -118,7 +118,8 @@ def test_render_project_md_with_ideas_section() -> None:
         notes=["note one"],
     )
     rendered = render_project_md(project)
-    assert "## Ideas\n\nLong-form prose describing the idea.\n\nA second paragraph of detail.\n" in rendered
+    expected = "## Ideas\n\nLong-form prose describing the idea.\n\nA second paragraph of detail.\n"
+    assert expected in rendered
     # Ideas must come before Notes.
     assert rendered.index("## Ideas") < rendered.index("## Notes")
 
