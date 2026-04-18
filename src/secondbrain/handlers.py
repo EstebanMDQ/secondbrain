@@ -92,6 +92,44 @@ def _snapshot(project: store.Project) -> _ProjectSnapshot:
     )
 
 
+def parse_capture_message(text: str) -> tuple[str, list[str]]:
+    """Split a capture message into (selector, notes) per the capture protocol.
+
+    The first non-empty line (after trimming leading/trailing blank lines) is
+    the selector. Remaining lines are grouped into paragraphs separated by
+    one or more blank lines; each paragraph becomes one note string with
+    internal newlines preserved.
+    """
+    lines = text.split("\n")
+
+    start = 0
+    while start < len(lines) and not lines[start].strip():
+        start += 1
+    end = len(lines)
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    lines = lines[start:end]
+
+    if not lines:
+        return "", []
+
+    selector = lines[0].strip()
+    remainder = lines[1:]
+
+    notes: list[str] = []
+    current: list[str] = []
+    for line in remainder:
+        if line.strip():
+            current.append(line)
+        elif current:
+            notes.append("\n".join(current))
+            current = []
+    if current:
+        notes.append("\n".join(current))
+
+    return selector, notes
+
+
 def parse_new_project_args(raw: str) -> tuple[str, str | None]:
     """Split the raw argument text for `/new` into (name, description).
 
@@ -267,7 +305,7 @@ def _extract_raw_args(message_text: str | None, command: str) -> str:
         return ""
     if not message_text.startswith(f"/{command}"):
         return ""
-    after = message_text[len(command) + 1:]
+    after = message_text[len(command) + 1 :]
     if after.startswith("@"):
         _, _, after = after.partition(" ")
     elif after.startswith(" ") or after.startswith("\n"):
@@ -290,8 +328,7 @@ async def new_project_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not name:
         await update.message.reply_text(
-            "usage: /new <name>\n"
-            "optional description: put it on the next line, or after ' - '"
+            "usage: /new <name>\noptional description: put it on the next line, or after ' - '"
         )
         return
 
@@ -299,8 +336,7 @@ async def new_project_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         existing = store.get_project(session, name)
         if existing is not None:
             await update.message.reply_text(
-                f"'{name}' collides with existing project "
-                f"'{existing.name}' (slug: {existing.slug})"
+                f"'{name}' collides with existing project '{existing.name}' (slug: {existing.slug})"
             )
             return
 
@@ -313,9 +349,7 @@ async def new_project_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         session.refresh(project)
         snapshot = _snapshot(project)
 
-    result = await obsidian.sync_project_async(
-        ctx.vault_path, ctx.vault_subfolder, snapshot
-    )
+    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
     if result.status in ("ok", "noop"):
         await update.message.reply_text(f"created '{snapshot.name}' (slug: {snapshot.slug})")
     elif result.status == "conflict":
@@ -349,9 +383,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     path = ctx.vault_path / ctx.vault_subfolder / f"{snapshot.slug}.md"
     if not path.exists():
-        path = obsidian.write_project_file(
-            ctx.vault_path, ctx.vault_subfolder, snapshot
-        )
+        path = obsidian.write_project_file(ctx.vault_path, ctx.vault_subfolder, snapshot)
 
     chat = update.effective_chat
     if chat is None:
@@ -377,9 +409,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = user.id if user is not None else 0
 
     with ctx.session_factory() as session:
-        awaiting_save_name = bool(
-            store.get_state(session, STATE_AWAITING_SAVE_NAME, False)
-        )
+        awaiting_save_name = bool(store.get_state(session, STATE_AWAITING_SAVE_NAME, False))
         discussion_mode = bool(store.get_state(session, STATE_DISCUSSION_MODE, False))
 
     if awaiting_save_name:
@@ -451,9 +481,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         session.refresh(project)
         snapshot = _snapshot(project)
 
-    result = await obsidian.sync_project_async(
-        ctx.vault_path, ctx.vault_subfolder, snapshot
-    )
+    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
     display = project_name or snapshot.name
     if result.status in ("ok", "noop"):
         await message.reply_text(_summarize_update(payload, display))
@@ -462,14 +490,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"Updated '{display}' but git rebase conflicted - see {result.path.name}"
         )
     else:
-        await message.reply_text(
-            f"Updated '{display}' but sync failed: {result.message}"
-        )
+        await message.reply_text(f"Updated '{display}' but sync failed: {result.message}")
 
 
-async def handle_confirmation_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
+async def handle_confirmation_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Resolve a pending new-project confirmation from the inline keyboard."""
     ctx = get_ctx(context)
     if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
@@ -516,9 +540,7 @@ async def handle_confirmation_callback(
         session.refresh(project)
         snapshot = _snapshot(project)
 
-    result = await obsidian.sync_project_async(
-        ctx.vault_path, ctx.vault_subfolder, snapshot
-    )
+    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
     if result.status in ("ok", "noop"):
         await query.edit_message_text(f"Created '{name}'")
     elif result.status == "conflict":
@@ -526,14 +548,10 @@ async def handle_confirmation_callback(
             f"Created '{name}' but git rebase conflicted - see {result.path.name}"
         )
     else:
-        await query.edit_message_text(
-            f"Created '{name}' but sync failed: {result.message}"
-        )
+        await query.edit_message_text(f"Created '{name}' but sync failed: {result.message}")
 
 
-async def _handle_discussion_turn(
-    ctx: BotContext, message: Any, user_id: int
-) -> None:
+async def _handle_discussion_turn(ctx: BotContext, message: Any, user_id: int) -> None:
     """Route a message through the discussion model and reply."""
     max_history = ctx.settings.discussion.max_history
     await discussion.append_user_message(user_id, message.text, max_history=max_history)
@@ -555,9 +573,7 @@ async def _handle_discussion_turn(
         await message.reply_text(f"AI error: {exc}")
         return
 
-    await discussion.append_assistant_message(
-        user_id, reply, max_history=max_history
-    )
+    await discussion.append_assistant_message(user_id, reply, max_history=max_history)
     await discussion.compact_if_needed(user_id, ctx.ai_clients, ctx.session_factory)
 
     if discussion.is_exit_intent(reply):
@@ -606,9 +622,7 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
-async def handle_clear_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
+async def handle_clear_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Resolve the /clear yes/no confirmation."""
     ctx = get_ctx(context)
     if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
@@ -625,9 +639,7 @@ async def handle_clear_callback(
     if user is None:
         return
     if decision == "yes":
-        await discussion.exit_discussion(
-            user.id, ctx.session_factory, clear_summary=True
-        )
+        await discussion.exit_discussion(user.id, ctx.session_factory, clear_summary=True)
         await query.edit_message_text("cleared")
     else:
         await query.edit_message_text("cancelled")
@@ -650,9 +662,7 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     history = list(state.recent_messages)
     try:
-        bullets = await ctx.ai_clients.summarize_discussion(
-            history, state.rolling_summary
-        )
+        bullets = await ctx.ai_clients.summarize_discussion(history, state.rolling_summary)
     except ai.AIError as exc:
         logger.warning("summarize_discussion failed: %s", exc)
         await message.reply_text(f"AI error: {exc}")
@@ -690,9 +700,7 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
-async def handle_save_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
+async def handle_save_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /save target-project inline keyboard."""
     ctx = get_ctx(context)
     if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
@@ -743,9 +751,7 @@ async def handle_save_callback(
         snapshot = _snapshot(updated)
         name = updated.name
 
-    result = await obsidian.sync_project_async(
-        ctx.vault_path, ctx.vault_subfolder, snapshot
-    )
+    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
     if result.status in ("ok", "noop"):
         await query.edit_message_text(f"saved to '{name}'")
     elif result.status == "conflict":
@@ -753,14 +759,10 @@ async def handle_save_callback(
             f"saved to '{name}' but git rebase conflicted - see {result.path.name}"
         )
     else:
-        await query.edit_message_text(
-            f"saved to '{name}' but sync failed: {result.message}"
-        )
+        await query.edit_message_text(f"saved to '{name}' but sync failed: {result.message}")
 
 
-async def _save_to_named_project(
-    ctx: BotContext, message: Any, project_name: str
-) -> None:
+async def _save_to_named_project(ctx: BotContext, message: Any, project_name: str) -> None:
     """Consume a pending save by creating or updating a project by name."""
     if not project_name:
         await message.reply_text("empty name, try /save again")
@@ -781,9 +783,7 @@ async def _save_to_named_project(
         bullets = list(payload.get("bullets") or [])
         existing = store.get_project(session, project_name)
         if existing is None:
-            project = store.create_project(
-                session, name=project_name, notes=bullets
-            )
+            project = store.create_project(session, name=project_name, notes=bullets)
         else:
             project = store.update_project(session, existing.id, notes=bullets)
         session.commit()
@@ -791,9 +791,7 @@ async def _save_to_named_project(
         snapshot = _snapshot(project)
         name = project.name
 
-    result = await obsidian.sync_project_async(
-        ctx.vault_path, ctx.vault_subfolder, snapshot
-    )
+    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
     if result.status in ("ok", "noop"):
         await message.reply_text(f"saved to '{name}'")
     elif result.status == "conflict":
@@ -801,6 +799,4 @@ async def _save_to_named_project(
             f"saved to '{name}' but git rebase conflicted - see {result.path.name}"
         )
     else:
-        await message.reply_text(
-            f"saved to '{name}' but sync failed: {result.message}"
-        )
+        await message.reply_text(f"saved to '{name}' but sync failed: {result.message}")

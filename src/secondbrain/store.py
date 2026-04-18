@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from rapidfuzz import fuzz, process
 from sqlalchemy import JSON, DateTime, Engine, String, create_engine, func, or_, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -165,6 +166,49 @@ def get_project(session: Session, identifier: str) -> Project | None:
             if alias.lower() == lowered:
                 return candidate
     return None
+
+
+def find_project_fuzzy(session: Session, query: str, threshold: int = 85) -> Project | None:
+    """Return the best fuzzy-matched project, or None when ambiguous/no match.
+
+    Builds a haystack of ``(candidate_string, project)`` pairs from each
+    project's ``name`` and non-empty ``aliases``. Uses ``rapidfuzz``'s
+    ``WRatio`` scorer to pick the top two candidates. The top project is
+    returned only when its score meets ``threshold`` AND either there is no
+    runner-up from a different project, or that runner-up trails by at
+    least ten points. When the top two candidates belong to the same
+    project, the next different-project candidate (if any) is used as the
+    runner-up.
+    """
+    pairs: list[tuple[str, Project]] = []
+    for project in session.scalars(select(Project)).all():
+        pairs.append((project.name, project))
+        for alias in project.aliases or []:
+            if alias:
+                pairs.append((alias, project))
+
+    if not pairs:
+        return None
+
+    candidates = [candidate for candidate, _ in pairs]
+    results = process.extract(query, candidates, scorer=fuzz.WRatio, limit=2)
+    if not results:
+        return None
+
+    _, top_score, top_index = results[0]
+    if top_score < threshold:
+        return None
+
+    top_project = pairs[top_index][1]
+    runner_up_score: float | None = None
+    for _, score, index in results[1:]:
+        if pairs[index][1].id != top_project.id:
+            runner_up_score = score
+            break
+
+    if runner_up_score is not None and runner_up_score > top_score - 10:
+        return None
+    return top_project
 
 
 def list_projects(session: Session) -> list[Project]:

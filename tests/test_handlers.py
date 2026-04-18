@@ -93,9 +93,7 @@ async def test_note_for_existing_project_updates_and_syncs(tmp_path: Path) -> No
         status="ok",
         path=vault / "projects" / "taskbot.md",
     )
-    update, tg_ctx = _fake_update_context(
-        ctx, user_id=42, text="remember to fix the bug"
-    )
+    update, tg_ctx = _fake_update_context(ctx, user_id=42, text="remember to fix the bug")
 
     sync_mock = AsyncMock(return_value=sync_result)
     with patch.object(obsidian, "sync_project_async", sync_mock):
@@ -123,9 +121,7 @@ async def test_note_for_new_project_stores_pending_and_asks(tmp_path: Path) -> N
         "notes": ["first spark"],
     }
     ctx, _, session_factory = _make_ctx(tmp_path, payload)
-    update, tg_ctx = _fake_update_context(
-        ctx, user_id=42, text="first spark", message_id=77
-    )
+    update, tg_ctx = _fake_update_context(ctx, user_id=42, text="first spark", message_id=77)
 
     sync_mock = AsyncMock()
     with patch.object(obsidian, "sync_project_async", sync_mock):
@@ -151,3 +147,47 @@ async def test_note_for_new_project_stores_pending_and_asks(tmp_path: Path) -> N
     assert stored is not None
     assert stored["name"] == "NewThing"
     assert stored["notes"] == ["first spark"]
+
+
+def test_parse_capture_message_single_line_has_no_notes() -> None:
+    selector, notes = handlers.parse_capture_message("morning-news")
+    assert selector == "morning-news"
+    assert notes == []
+
+
+def test_parse_capture_message_two_lines_yields_one_note() -> None:
+    selector, notes = handlers.parse_capture_message("morning-news\nfix dedupe")
+    assert selector == "morning-news"
+    assert notes == ["fix dedupe"]
+
+
+def test_parse_capture_message_two_paragraphs_yield_two_notes() -> None:
+    selector, notes = handlers.parse_capture_message("morning-news\nfix dedupe\n\nbump feed log")
+    assert selector == "morning-news"
+    assert notes == ["fix dedupe", "bump feed log"]
+
+
+def test_parse_capture_message_blank_line_groups_paragraphs() -> None:
+    text = "morning-news\nline one\nline two\n\nsecond paragraph\nwith wrap"
+    selector, notes = handlers.parse_capture_message(text)
+    assert selector == "morning-news"
+    assert notes == ["line one\nline two", "second paragraph\nwith wrap"]
+
+
+def test_parse_capture_message_trims_leading_and_trailing_blank_lines() -> None:
+    text = "\n\nmorning-news\nfix dedupe\n\n\n"
+    selector, notes = handlers.parse_capture_message(text)
+    assert selector == "morning-news"
+    assert notes == ["fix dedupe"]
+
+
+def test_parse_capture_message_collapses_multiple_blank_separators() -> None:
+    text = "morning-news\nfirst\n\n\n\nsecond"
+    selector, notes = handlers.parse_capture_message(text)
+    assert selector == "morning-news"
+    assert notes == ["first", "second"]
+
+
+def test_parse_capture_message_empty_input() -> None:
+    assert handlers.parse_capture_message("") == ("", [])
+    assert handlers.parse_capture_message("\n\n\n") == ("", [])

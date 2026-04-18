@@ -1,17 +1,17 @@
 # Tasks: update-note-capture-protocol
 
 ## 1. Parser and fuzzy match
-- [ ] 1.1 Add a pure parser in `handlers.py` (or a small helper module)
+- [x] 1.1 Add a pure parser in `handlers.py` (or a small helper module)
       that returns `(selector: str, notes: list[str])` from a raw message
       per the rules in `design.md` - first non-empty line + paragraph-
       separated remainder; rejects single-line input by returning an
       empty notes list.
-- [ ] 1.2 Add `rapidfuzz` to `pyproject.toml` and `uv lock`.
-- [ ] 1.3 Implement `store.find_project_fuzzy(session, query, threshold)`
+- [x] 1.2 Add `rapidfuzz` to `pyproject.toml` and `uv lock`.
+- [x] 1.3 Implement `store.find_project_fuzzy(session, query, threshold)`
       using `rapidfuzz.process.extractOne` against the union of each
       project's name and aliases. Apply the 10-point runner-up gap rule;
       return None when ambiguous.
-- [ ] 1.4 Unit-test the parser and the fuzzy matcher (exact, typo, near
+- [x] 1.4 Unit-test the parser and the fuzzy matcher (exact, typo, near
       miss, ambiguous, no match).
 
 ## 2. Handler rewrite

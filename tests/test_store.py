@@ -11,6 +11,7 @@ from secondbrain.store import (
     _unique_slug,
     add_alias,
     create_project,
+    find_project_fuzzy,
     get_project,
     get_state,
     init_db,
@@ -267,3 +268,52 @@ def test_state_roundtrip(session: Session) -> None:
     set_state(session, "discussion_mode", False)
     session.commit()
     assert get_state(session, "discussion_mode") is False
+
+
+def test_find_project_fuzzy_returns_none_for_empty_store(session: Session) -> None:
+    assert find_project_fuzzy(session, "anything") is None
+
+
+def test_find_project_fuzzy_exact_match(session: Session) -> None:
+    project = create_project(session, name="facturabot")
+    create_project(session, name="morning-news")
+    session.commit()
+
+    match = find_project_fuzzy(session, "facturabot")
+    assert match is not None
+    assert match.id == project.id
+
+
+def test_find_project_fuzzy_typo_above_threshold(session: Session) -> None:
+    project = create_project(session, name="facturabot")
+    create_project(session, name="morning-news")
+    session.commit()
+
+    match = find_project_fuzzy(session, "facturaabot")
+    assert match is not None
+    assert match.id == project.id
+
+
+def test_find_project_fuzzy_near_miss_returns_none(session: Session) -> None:
+    create_project(session, name="facturabot")
+    session.commit()
+
+    assert find_project_fuzzy(session, "zzzzzzzzzz") is None
+
+
+def test_find_project_fuzzy_ambiguous_returns_none(session: Session) -> None:
+    create_project(session, name="zebra", aliases=["shared"])
+    create_project(session, name="tiger", aliases=["shared"])
+    session.commit()
+
+    assert find_project_fuzzy(session, "shared") is None
+
+
+def test_find_project_fuzzy_matches_alias(session: Session) -> None:
+    project = create_project(session, name="Morning News", aliases=["auranews"])
+    create_project(session, name="facturabot")
+    session.commit()
+
+    match = find_project_fuzzy(session, "auranews")
+    assert match is not None
+    assert match.id == project.id
