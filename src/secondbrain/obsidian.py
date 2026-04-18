@@ -19,7 +19,7 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-SyncStatus = Literal["ok", "conflict", "push_failed", "noop"]
+SyncStatus = Literal["ok", "conflict", "dirty", "push_failed", "noop"]
 
 
 @runtime_checkable

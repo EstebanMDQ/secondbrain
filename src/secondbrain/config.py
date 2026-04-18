@@ -46,6 +46,7 @@ class CaptureSettings:
 class ObsidianSettings:
     vault_path: Path = Path()
     subfolder: str = "projects"
+    auto_stash_dirty: bool = False
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,19 @@ def _coerce_int(value: Any) -> int:
                 raise ConfigError(f"expected integer, got {value!r}") from exc
         raise ConfigError(f"expected integer, got {type(value).__name__}: {value!r}")
     return value
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1"}:
+            return True
+        if lowered in {"false", "0"}:
+            return False
+        raise ConfigError(f"expected boolean, got {value!r}")
+    raise ConfigError(f"expected boolean, got {type(value).__name__}: {value!r}")
 
 
 def _build_provider(raw: dict[str, Any], dotted: str) -> AIProviderSettings:
@@ -144,6 +158,9 @@ def _build_settings(raw: dict[str, Any]) -> Settings:
     obsidian = ObsidianSettings(
         vault_path=Path(_coerce_str(vault_raw)) if vault_raw else Path(),
         subfolder=_coerce_str(obsidian_raw.get("subfolder", defaults.obsidian.subfolder)),
+        auto_stash_dirty=_coerce_bool(
+            obsidian_raw.get("auto_stash_dirty", defaults.obsidian.auto_stash_dirty)
+        ),
     )
 
     return Settings(
@@ -174,6 +191,7 @@ _ENV_MAP: dict[str, tuple[tuple[str, ...], str]] = {
     "capture_fuzzy_threshold": (("capture", "fuzzy_threshold"), "int"),
     "obsidian_vault_path": (("obsidian", "vault_path"), "path"),
     "obsidian_subfolder": (("obsidian", "subfolder"), "str"),
+    "obsidian_auto_stash_dirty": (("obsidian", "auto_stash_dirty"), "bool"),
 }
 
 
@@ -184,6 +202,8 @@ def _coerce_env(raw: str, kind: str) -> Any:
         return _coerce_int(raw)
     if kind == "path":
         return Path(raw)
+    if kind == "bool":
+        return _coerce_bool(raw)
     raise ConfigError(f"internal: unknown env coercion kind {kind!r}")
 
 

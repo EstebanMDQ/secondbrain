@@ -165,6 +165,43 @@ def test_capture_fuzzy_threshold_env_override(
     assert settings.capture.fuzzy_threshold == 92
 
 
+def test_obsidian_auto_stash_dirty_defaults_to_false(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+
+    settings = load_config(config_path)
+
+    assert settings.obsidian.auto_stash_dirty is False
+
+
+def test_obsidian_auto_stash_dirty_toml_override(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    config_path = _write_config(tmp_path, vault=vault, omit={"obsidian"})
+    obsidian_section = textwrap.dedent(
+        f"""
+        [obsidian]
+        vault_path = "{vault}"
+        subfolder = "notes"
+        auto_stash_dirty = true
+        """
+    ).strip()
+    config_path.write_text(config_path.read_text() + "\n" + obsidian_section + "\n")
+
+    settings = load_config(config_path)
+
+    assert settings.obsidian.auto_stash_dirty is True
+
+
+def test_obsidian_auto_stash_dirty_env_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = _write_config(tmp_path)
+    monkeypatch.setenv("SECONDBRAIN_OBSIDIAN_AUTO_STASH_DIRTY", "true")
+
+    settings = load_config(config_path)
+
+    assert settings.obsidian.auto_stash_dirty is True
+
+
 def test_missing_required_field_raises_config_error(tmp_path: Path) -> None:
     config_path = _write_config(tmp_path, omit={"telegram"})
 
