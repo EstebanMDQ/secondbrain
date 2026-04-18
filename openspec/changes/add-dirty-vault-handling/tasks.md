@@ -8,22 +8,22 @@
       written with the hard-coded default.
 
 ## 2. Sync logic
-- [ ] 2.1 Add a helper `_dirty_paths(vault_path, skip_rel_path)` that
+- [x] 2.1 Add a helper `_dirty_paths(vault_path, skip_rel_path)` that
       runs `git status --porcelain` and returns the non-skipped paths.
-- [ ] 2.2 Integrate the helper into `sync_project` before
+- [x] 2.2 Integrate the helper into `sync_project` before
       `git pull --rebase`:
       - If dirty and `auto_stash_dirty` is false -> return
         `SyncResult(status="dirty", path=target, message=...)` without
         writing any sidecar and without running git operations.
       - If dirty and `auto_stash_dirty` is true -> `git stash push -u
         -m "secondbrain-autostash-<slug>-<ts>"` before pull.
-- [ ] 2.3 After a successful push, if a stash was created, `git stash
+- [x] 2.3 After a successful push, if a stash was created, `git stash
       pop`. On pop failure, leave the stash in place and attach the
       stash ref to the returned message.
-- [ ] 2.4 Thread the `auto_stash_dirty` flag into `sync_project` (and
+- [x] 2.4 Thread the `auto_stash_dirty` flag into `sync_project` (and
       the async wrapper) as a parameter; plumb from the handler via
       `BotContext`.
-- [ ] 2.5 Keep existing `conflict` semantics: real rebase failures
+- [x] 2.5 Keep existing `conflict` semantics: real rebase failures
       still abort the rebase and write a `{slug}.conflict.md` sidecar.
 
 ## 3. Handlers
@@ -34,8 +34,8 @@
       dirty paths.
 
 ## 4. Tests
-- [ ] 4.1 Unit-test `_dirty_paths` against a real temp repo.
-- [ ] 4.2 Extend `tests/test_obsidian.py`:
+- [x] 4.1 Unit-test `_dirty_paths` against a real temp repo.
+- [x] 4.2 Extend `tests/test_obsidian.py`:
       - Dirty vault with auto-stash off returns `dirty` and writes no
         sidecar.
       - Dirty vault with auto-stash on stashes, pulls, writes, commits,

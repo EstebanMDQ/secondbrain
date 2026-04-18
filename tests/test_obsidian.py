@@ -7,8 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
+from secondbrain import obsidian
 from secondbrain.obsidian import (
     SyncResult,
+    _dirty_paths,
     render_project_md,
     sync_project,
     sync_project_async,
@@ -322,3 +324,134 @@ async def test_sync_project_async_wraps_sync(tmp_path: Path) -> None:
     result = await sync_project_async(clone, "projects", project)
     assert isinstance(result, SyncResult)
     assert result.status == "ok"
+
+
+def test_dirty_paths_clean_tree_returns_empty(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    assert _dirty_paths(clone, None) == []
+
+
+def test_dirty_paths_reports_modified_and_untracked(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / "README.md").write_text("changed\n")
+    (clone / "new.md").write_text("fresh\n")
+
+    paths = _dirty_paths(clone, None)
+
+    assert set(paths) == {"README.md", "new.md"}
+
+
+def test_dirty_paths_excludes_skip_path(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / "README.md").write_text("changed\n")
+    (clone / "projects").mkdir()
+    (clone / "projects" / "widget.md").write_text("bot output\n")
+
+    paths = _dirty_paths(clone, Path("projects") / "widget.md")
+
+    assert paths == ["README.md"]
+
+
+def test_sync_project_dirty_returns_without_writing(tmp_path: Path) -> None:
+    bare, clone = _init_vault(tmp_path)
+    (clone / "scratch.md").write_text("work in progress\n")
+    _git(clone, "add", "scratch.md")
+    _git(clone, "commit", "-m", "add scratch")
+    _git(clone, "push")
+    (clone / "scratch.md").write_text("uncommitted edits\n")
+
+    commits_before = _git(clone, "log", "--oneline").stdout.count("\n")
+    project = FakeProject(name="Widget", slug="widget", description="dirty run")
+
+    result = sync_project(clone, "projects", project)
+
+    assert result.status == "dirty"
+    assert result.path == clone / "projects" / "widget.md"
+    assert "scratch.md" in result.message
+    assert not (clone / "projects" / "widget.md").exists()
+    assert not (clone / "projects" / "widget.conflict.md").exists()
+    # No commits were made while the tree was dirty.
+    commits_after = _git(clone, "log", "--oneline").stdout.count("\n")
+    assert commits_after == commits_before
+    # Uncommitted edit still on disk.
+    assert (clone / "scratch.md").read_text() == "uncommitted edits\n"
+    # Stash was not touched.
+    assert _git(clone, "stash", "list").stdout == ""
+    # Silence unused-variable warnings from the bare-remote fixture.
+    assert bare.exists()
+
+
+def test_sync_project_auto_stash_roundtrips_dirty_edits(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / "scratch.md").write_text("baseline\n")
+    _git(clone, "add", "scratch.md")
+    _git(clone, "commit", "-m", "add scratch")
+    _git(clone, "push")
+    (clone / "scratch.md").write_text("wip edits\n")
+    (clone / "untracked.md").write_text("brand new\n")
+
+    project = FakeProject(name="Widget", slug="widget", description="auto-stash")
+    result = sync_project(clone, "projects", project, auto_stash_dirty=True)
+
+    assert result.status == "ok"
+    assert result.path == clone / "projects" / "widget.md"
+    assert result.path.exists()
+    # Commit for the project landed and was pushed.
+    log = _git(clone, "log", "--format=%s", "-n", "1").stdout.strip()
+    assert log == "update widget"
+    remote_log = _git(clone, "log", "origin/main", "--format=%s", "-n", "1").stdout.strip()
+    assert remote_log == "update widget"
+    # Stash was popped clean.
+    assert _git(clone, "stash", "list").stdout == ""
+    # Dirty edits restored to the working tree.
+    assert (clone / "scratch.md").read_text() == "wip edits\n"
+    assert (clone / "untracked.md").read_text() == "brand new\n"
+
+
+def test_sync_project_auto_stash_pop_conflict_leaves_stash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / "scratch.md").write_text("baseline\n")
+    _git(clone, "add", "scratch.md")
+    _git(clone, "commit", "-m", "add scratch")
+    _git(clone, "push")
+    (clone / "scratch.md").write_text("wip edits\n")
+
+    real_run_git = obsidian._run_git
+
+    def run_git(args: list[str], *, cwd: Path, check: bool = True):  # type: ignore[no-untyped-def]
+        if args[:2] == ["stash", "pop"]:
+            raise subprocess.CalledProcessError(
+                1, ["git", *args], output="", stderr="CONFLICT in scratch.md"
+            )
+        return real_run_git(args, cwd=cwd, check=check)
+
+    monkeypatch.setattr(obsidian, "_run_git", run_git)
+
+    project = FakeProject(name="Widget", slug="widget", description="pop fails")
+    result = sync_project(clone, "projects", project, auto_stash_dirty=True)
+
+    assert result.status == "ok"
+    assert result.message.startswith("stash left in place: ")
+    assert "stash@{0}" in result.message
+    # Stash is still there for the user to recover.
+    assert "secondbrain-autostash-widget-" in _git(clone, "stash", "list").stdout
+
+
+async def test_sync_project_async_forwards_auto_stash_dirty(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / "scratch.md").write_text("baseline\n")
+    _git(clone, "add", "scratch.md")
+    _git(clone, "commit", "-m", "add scratch")
+    _git(clone, "push")
+    (clone / "scratch.md").write_text("async wip\n")
+
+    project = FakeProject(name="Widget", slug="widget", description="async dirty")
+
+    dirty_result = await sync_project_async(clone, "projects", project)
+    assert dirty_result.status == "dirty"
+
+    ok_result = await sync_project_async(clone, "projects", project, auto_stash_dirty=True)
+    assert ok_result.status == "ok"
+    assert (clone / "scratch.md").read_text() == "async wip\n"

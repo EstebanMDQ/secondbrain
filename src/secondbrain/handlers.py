@@ -59,6 +59,7 @@ class BotContext:
     session_factory: Callable[[], Session]
     vault_path: Path
     vault_subfolder: str
+    auto_stash_dirty: bool = False
 
 
 @dataclass(frozen=True)
@@ -334,7 +335,12 @@ async def new_project_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         session.refresh(project)
         snapshot = _snapshot(project)
 
-    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
+    result = await obsidian.sync_project_async(
+        ctx.vault_path,
+        ctx.vault_subfolder,
+        snapshot,
+        auto_stash_dirty=ctx.auto_stash_dirty,
+    )
     if result.status in ("ok", "noop"):
         await update.message.reply_text(f"created '{snapshot.name}' (slug: {snapshot.slug})")
     elif result.status == "conflict":
@@ -446,7 +452,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         session.refresh(updated)
         snapshot = _snapshot(updated)
 
-    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
+    result = await obsidian.sync_project_async(
+        ctx.vault_path,
+        ctx.vault_subfolder,
+        snapshot,
+        auto_stash_dirty=ctx.auto_stash_dirty,
+    )
     if result.status in ("ok", "noop"):
         await message.reply_text(_summarize_update({"notes": notes}, snapshot.name))
     elif result.status == "conflict":
@@ -497,7 +508,12 @@ async def handle_confirmation_callback(update: Update, context: ContextTypes.DEF
         session.refresh(project)
         snapshot = _snapshot(project)
 
-    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
+    result = await obsidian.sync_project_async(
+        ctx.vault_path,
+        ctx.vault_subfolder,
+        snapshot,
+        auto_stash_dirty=ctx.auto_stash_dirty,
+    )
     if result.status in ("ok", "noop"):
         await query.edit_message_text(f"Created '{name}'")
     elif result.status == "conflict":
@@ -708,7 +724,12 @@ async def handle_save_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         snapshot = _snapshot(updated)
         name = updated.name
 
-    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
+    result = await obsidian.sync_project_async(
+        ctx.vault_path,
+        ctx.vault_subfolder,
+        snapshot,
+        auto_stash_dirty=ctx.auto_stash_dirty,
+    )
     if result.status in ("ok", "noop"):
         await query.edit_message_text(f"saved to '{name}'")
     elif result.status == "conflict":
@@ -748,7 +769,12 @@ async def _save_to_named_project(ctx: BotContext, message: Any, project_name: st
         snapshot = _snapshot(project)
         name = project.name
 
-    result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
+    result = await obsidian.sync_project_async(
+        ctx.vault_path,
+        ctx.vault_subfolder,
+        snapshot,
+        auto_stash_dirty=ctx.auto_stash_dirty,
+    )
     if result.status in ("ok", "noop"):
         await message.reply_text(f"saved to '{name}'")
     elif result.status == "conflict":

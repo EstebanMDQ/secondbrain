@@ -12,6 +12,7 @@ import asyncio
 import logging
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -147,17 +148,93 @@ def _has_changes(vault_path: Path, rel_path: Path) -> bool:
     return bool(result.stdout.strip())
 
 
-def sync_project(vault_path: Path, subfolder: str, project: Any) -> SyncResult:
+def _dirty_paths(vault_path: Path, skip_rel_path: Path | None) -> list[str]:
+    """Return paths with non-empty git status, excluding ``skip_rel_path``.
+
+    Runs ``git status --porcelain -uall`` across the whole repo. Porcelain
+    lines are of the form ``XY <path>`` where ``XY`` is a two-char status and
+    a space follows - the path is everything after the 3-character prefix.
+    ``-uall`` lists untracked files individually so the skip filter can
+    match on a specific file even inside a brand-new directory.
+    """
+    result = _run_git(
+        ["status", "--porcelain", "-uall"],
+        cwd=vault_path,
+        check=True,
+    )
+    skip = str(skip_rel_path) if skip_rel_path is not None else None
+    paths: list[str] = []
+    for line in result.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:]
+        if skip is not None and path == skip:
+            continue
+        paths.append(path)
+    return paths
+
+
+def _top_stash_ref(vault_path: Path) -> str | None:
+    """Return the ref of the topmost stash (``stash@{0}``) or None if empty."""
+    result = _run_git(["stash", "list"], cwd=vault_path, check=False)
+    first = result.stdout.splitlines()[:1]
+    if not first:
+        return None
+    line = first[0]
+    ref, _, _ = line.partition(":")
+    ref = ref.strip()
+    return ref or None
+
+
+def sync_project(
+    vault_path: Path,
+    subfolder: str,
+    project: Any,
+    *,
+    auto_stash_dirty: bool = False,
+) -> SyncResult:
     """Atomically sync a project markdown file to the vault's git remote.
 
-    Sequence: ``git pull --rebase`` -> write file -> ``git add`` -> ``git commit``
-    -> ``git push``. On rebase failure a ``{slug}.conflict.md`` sidecar is
+    Sequence: optional pre-sync dirty check -> ``git pull --rebase`` ->
+    write file -> ``git add`` -> ``git commit`` -> ``git push`` -> optional
+    ``git stash pop``. On rebase failure a ``{slug}.conflict.md`` sidecar is
     written and the rebase is aborted. On push failure the local commit is
     kept for manual recovery.
+
+    When ``auto_stash_dirty`` is False and the working tree has uncommitted
+    changes unrelated to the project file, the sync is aborted with
+    ``status='dirty'`` and no git operations are performed. When True, those
+    changes are stashed before the pull and restored with ``git stash pop``
+    after a successful push; a failing pop leaves the stash in place.
     """
     slug = _project_field(project, "slug", None)
     if not slug:
         raise ValueError("project is missing a slug")
+
+    rel_path = Path(subfolder) / f"{slug}.md"
+    target = vault_path / rel_path
+
+    dirty = _dirty_paths(vault_path, rel_path)
+    stash_ref: str | None = None
+    if dirty:
+        if not auto_stash_dirty:
+            preview = ", ".join(dirty[:5])
+            return SyncResult(
+                status="dirty",
+                path=target,
+                message=f"vault has uncommitted changes; commit or stash them: {preview}",
+            )
+        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+        stash_msg = f"secondbrain-autostash-{slug}-{timestamp}"
+        stash_result = _run_git(
+            ["stash", "push", "-u", "-m", stash_msg],
+            cwd=vault_path,
+            check=True,
+        )
+        if "No local changes to save" in stash_result.stdout:
+            stash_ref = None
+        else:
+            stash_ref = _top_stash_ref(vault_path)
 
     try:
         _run_git(["pull", "--rebase"], cwd=vault_path, check=True)
@@ -191,6 +268,22 @@ def sync_project(vault_path: Path, subfolder: str, project: Any) -> SyncResult:
         logger.warning("git push failed for %s: %s", slug, message)
         return SyncResult(status="push_failed", path=target, message=message)
 
+    if stash_ref is not None:
+        try:
+            _run_git(["stash", "pop"], cwd=vault_path, check=True)
+        except subprocess.CalledProcessError as exc:
+            logger.warning(
+                "git stash pop failed for %s (%s): %s",
+                slug,
+                stash_ref,
+                (exc.stderr or "").strip(),
+            )
+            return SyncResult(
+                status="ok",
+                path=target,
+                message=f"stash left in place: {stash_ref}",
+            )
+
     return SyncResult(status="ok", path=target)
 
 
@@ -198,6 +291,14 @@ async def sync_project_async(
     vault_path: Path,
     subfolder: str,
     project: Any,
+    *,
+    auto_stash_dirty: bool = False,
 ) -> SyncResult:
     """Async wrapper that runs :func:`sync_project` under ``asyncio.to_thread``."""
-    return await asyncio.to_thread(sync_project, vault_path, subfolder, project)
+    return await asyncio.to_thread(
+        sync_project,
+        vault_path,
+        subfolder,
+        project,
+        auto_stash_dirty=auto_stash_dirty,
+    )

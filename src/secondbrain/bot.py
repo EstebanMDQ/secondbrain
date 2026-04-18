@@ -53,6 +53,7 @@ def _build_application(settings: Settings) -> tuple[Application, handlers.BotCon
         session_factory=session_factory,
         vault_path=settings.obsidian.vault_path,
         vault_subfolder=settings.obsidian.subfolder,
+        auto_stash_dirty=settings.obsidian.auto_stash_dirty,
     )
 
     application = Application.builder().token(settings.telegram.token).build()
