@@ -30,10 +30,6 @@ STATE_PENDING_SAVE = "pending_save"
 STATE_AWAITING_SAVE_NAME = "awaiting_save_name"
 STATE_HAS_STARTED = "has_started"
 
-_UPDATEABLE_FIELDS = frozenset(
-    {"name", "description", "status", "notes", "stack", "tags", "aliases"}
-)
-
 COMMAND_DESCRIPTIONS: dict[str, str] = {
     "/start": "welcome message and bot intro",
     "/help": "show this list of commands",
@@ -173,17 +169,6 @@ def require_allowed_user(update: Update, allowed_user_id: int) -> bool:
         )
         return False
     return True
-
-
-def _project_metas(session: Session) -> list[ai.ProjectMeta]:
-    return [
-        ai.ProjectMeta(name=p.name, aliases=list(p.aliases or []))
-        for p in store.list_projects(session)
-    ]
-
-
-def _payload_fields(payload: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in payload.items() if k in _UPDATEABLE_FIELDS}
 
 
 def _normalize_notes(value: Any) -> list[str]:
@@ -397,7 +382,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Route a free-text message: awaiting name -> discussion -> categorize -> note."""
+    """Route a free-text message: awaiting name -> discussion -> capture parse."""
     ctx = get_ctx(context)
     if not require_allowed_user(update, ctx.settings.telegram.allowed_user_id):
         return
@@ -420,35 +405,22 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await _handle_discussion_turn(ctx, message, user_id)
         return
 
-    with ctx.session_factory() as session:
-        projects = _project_metas(session)
-
-    try:
-        payload = await ctx.ai_clients.categorize(message.text, projects=projects)
-    except ai.AIError as exc:
-        logger.warning("categorization failed: %s", exc)
-        await message.reply_text(f"AI error: {exc}")
-        return
-
-    intent = payload.get("intent", "note")
-    if intent == "question":
-        await message.reply_text("looks like a question - /chat to discuss")
-        return
-
-    project_name = payload.get("name")
-    project_slug = payload.get("project_slug")
-    identifier = project_slug or project_name
-    if not identifier:
-        await message.reply_text("couldn't infer a project from this message")
+    selector, notes = parse_capture_message(message.text)
+    if not selector or not notes:
+        await message.reply_text("send the project on line 1 and notes on the next lines")
         return
 
     with ctx.session_factory() as session:
-        existing = store.get_project(session, identifier)
-        if existing is None:
+        project = store.get_project(session, selector)
+        if project is None:
+            project = store.find_project_fuzzy(
+                session, selector, ctx.settings.capture.fuzzy_threshold
+            )
+
+        if project is None:
             pending_key = f"{STATE_PENDING_PREFIX}{message.message_id}"
-            store.set_state(session, pending_key, payload)
+            store.set_state(session, pending_key, {"name": selector, "notes": notes})
             session.commit()
-            display = project_name or project_slug or identifier
             keyboard = InlineKeyboardMarkup(
                 [
                     [
@@ -464,33 +436,25 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 ]
             )
             await message.reply_text(
-                f"Create '{display}'?",
+                f"Create '{selector}'?",
                 reply_markup=keyboard,
             )
             return
 
-        fields = _payload_fields(payload)
-        if project_name:
-            aliases = list(fields.get("aliases") or [])
-            if project_name.lower() not in {a.lower() for a in aliases}:
-                aliases.append(project_name)
-            fields["aliases"] = aliases
-
-        project = store.update_project(session, existing.id, **fields)
+        updated = store.update_project(session, project.id, notes=notes)
         session.commit()
-        session.refresh(project)
-        snapshot = _snapshot(project)
+        session.refresh(updated)
+        snapshot = _snapshot(updated)
 
     result = await obsidian.sync_project_async(ctx.vault_path, ctx.vault_subfolder, snapshot)
-    display = project_name or snapshot.name
     if result.status in ("ok", "noop"):
-        await message.reply_text(_summarize_update(payload, display))
+        await message.reply_text(_summarize_update({"notes": notes}, snapshot.name))
     elif result.status == "conflict":
         await message.reply_text(
-            f"Updated '{display}' but git rebase conflicted - see {result.path.name}"
+            f"Updated '{snapshot.name}' but git rebase conflicted - see {result.path.name}"
         )
     else:
-        await message.reply_text(f"Updated '{display}' but sync failed: {result.message}")
+        await message.reply_text(f"Updated '{snapshot.name}' but sync failed: {result.message}")
 
 
 async def handle_confirmation_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -523,18 +487,11 @@ async def handle_confirmation_callback(update: Update, context: ContextTypes.DEF
             await query.edit_message_text("cancelled")
             return
 
-        name = payload.get("name") or payload.get("project_slug") or "untitled"
-        aliases = list(payload.get("aliases") or [])
+        name = payload.get("name") or "untitled"
         project = store.create_project(
             session,
             name=name,
-            slug=payload.get("project_slug"),
-            description=payload.get("description"),
-            stack=list(payload.get("stack") or []),
-            tags=list(payload.get("tags") or []),
-            status=payload.get("status"),
-            notes=_normalize_notes(payload.get("notes")),
-            aliases=aliases,
+            notes=list(payload.get("notes") or []),
         )
         session.commit()
         session.refresh(project)

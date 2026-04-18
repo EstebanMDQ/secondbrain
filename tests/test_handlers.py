@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from sqlalchemy.orm import sessionmaker
@@ -20,32 +19,26 @@ def _make_settings(vault: Path) -> config.Settings:
             timeout_seconds=30,
         ),
         discussion=config.DiscussionSettings(max_history=20, stale_minutes=30),
+        capture=config.CaptureSettings(fuzzy_threshold=85),
         obsidian=config.ObsidianSettings(vault_path=vault, subfolder="projects"),
     )
 
 
-def _make_ctx(
-    tmp_path: Path,
-    category_payload: dict[str, Any],
-) -> tuple[handlers.BotContext, AsyncMock, Any]:
+def _make_ctx(tmp_path: Path) -> tuple[handlers.BotContext, sessionmaker]:
     vault = tmp_path / "vault"
     vault.mkdir()
     db = tmp_path / "brain.db"
     engine = store.init_db(db)
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
 
-    categorize = AsyncMock(return_value=category_payload)
-    ai_clients = MagicMock()
-    ai_clients.categorize = categorize
-
     ctx = handlers.BotContext(
         settings=_make_settings(vault),
-        ai_clients=ai_clients,
+        ai_clients=MagicMock(),
         session_factory=session_factory,
         vault_path=vault,
         vault_subfolder="projects",
     )
-    return ctx, categorize, session_factory
+    return ctx, session_factory
 
 
 def _fake_update_context(
@@ -66,40 +59,49 @@ def _fake_update_context(
     return update, tg_ctx
 
 
+def _fake_callback_context(
+    ctx: handlers.BotContext,
+    *,
+    user_id: int,
+    data: str,
+) -> tuple[MagicMock, MagicMock]:
+    update = MagicMock()
+    update.effective_user.id = user_id
+    update.callback_query.data = data
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    tg_ctx = MagicMock()
+    tg_ctx.bot_data = {handlers.CTX_KEY: ctx}
+    return update, tg_ctx
+
+
 async def test_unauthorized_user_is_silently_dropped(tmp_path: Path) -> None:
-    ctx, categorize, _ = _make_ctx(tmp_path, {"intent": "note", "name": "whatever"})
-    update, tg_ctx = _fake_update_context(ctx, user_id=999, text="ignored")
+    ctx, _ = _make_ctx(tmp_path)
+    update, tg_ctx = _fake_update_context(ctx, user_id=999, text="ignored\nnote")
 
     await handlers.handle_text_message(update, tg_ctx)
 
     update.message.reply_text.assert_not_called()
-    categorize.assert_not_called()
 
 
-async def test_note_for_existing_project_updates_and_syncs(tmp_path: Path) -> None:
-    payload = {
-        "intent": "note",
-        "name": "Taskbot",
-        "notes": ["remember to fix the bug"],
-    }
-    ctx, categorize, session_factory = _make_ctx(tmp_path, payload)
+async def test_matched_project_appends_notes_and_replies_ok(tmp_path: Path) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
 
     with session_factory() as session:
         store.create_project(session, name="Taskbot")
         session.commit()
 
-    vault = ctx.vault_path
     sync_result = obsidian.SyncResult(
         status="ok",
-        path=vault / "projects" / "taskbot.md",
+        path=ctx.vault_path / "projects" / "taskbot.md",
     )
-    update, tg_ctx = _fake_update_context(ctx, user_id=42, text="remember to fix the bug")
+    update, tg_ctx = _fake_update_context(ctx, user_id=42, text="Taskbot\nremember to fix the bug")
 
     sync_mock = AsyncMock(return_value=sync_result)
     with patch.object(obsidian, "sync_project_async", sync_mock):
         await handlers.handle_text_message(update, tg_ctx)
 
-    categorize.assert_awaited_once()
     sync_mock.assert_awaited_once()
     update.message.reply_text.assert_awaited_once()
 
@@ -113,15 +115,62 @@ async def test_note_for_existing_project_updates_and_syncs(tmp_path: Path) -> No
         assert "remember to fix the bug" in project.notes
 
 
-async def test_note_for_new_project_stores_pending_and_asks(tmp_path: Path) -> None:
-    payload = {
-        "intent": "note",
-        "name": "NewThing",
-        "description": "a new project idea",
-        "notes": ["first spark"],
-    }
-    ctx, _, session_factory = _make_ctx(tmp_path, payload)
-    update, tg_ctx = _fake_update_context(ctx, user_id=42, text="first spark", message_id=77)
+async def test_typo_selector_matches_via_fuzzy_and_appends_notes(tmp_path: Path) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+
+    with session_factory() as session:
+        store.create_project(session, name="facturabot")
+        session.commit()
+
+    sync_result = obsidian.SyncResult(
+        status="ok",
+        path=ctx.vault_path / "projects" / "facturabot.md",
+    )
+    update, tg_ctx = _fake_update_context(ctx, user_id=42, text="facturaabot\nfix invoice parser")
+
+    sync_mock = AsyncMock(return_value=sync_result)
+    with patch.object(obsidian, "sync_project_async", sync_mock):
+        await handlers.handle_text_message(update, tg_ctx)
+
+    sync_mock.assert_awaited_once()
+    reply = update.message.reply_text.await_args.args[0]
+    assert "facturabot" in reply
+
+    with session_factory() as session:
+        project = store.get_project(session, "facturabot")
+        assert project is not None
+        assert "fix invoice parser" in project.notes
+
+
+async def test_single_line_message_is_rejected(tmp_path: Path) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+
+    with session_factory() as session:
+        store.create_project(session, name="Taskbot")
+        session.commit()
+
+    update, tg_ctx = _fake_update_context(ctx, user_id=42, text="Taskbot")
+
+    sync_mock = AsyncMock()
+    with patch.object(obsidian, "sync_project_async", sync_mock):
+        await handlers.handle_text_message(update, tg_ctx)
+
+    sync_mock.assert_not_called()
+    reply = update.message.reply_text.await_args.args[0]
+    assert "line 1" in reply
+    assert "notes" in reply.lower()
+
+    with session_factory() as session:
+        project = store.get_project(session, "Taskbot")
+        assert project is not None
+        assert project.notes == []
+
+
+async def test_no_match_stores_pending_confirmation(tmp_path: Path) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+    update, tg_ctx = _fake_update_context(
+        ctx, user_id=42, text="NewThing\nfirst spark", message_id=77
+    )
 
     sync_mock = AsyncMock()
     with patch.object(obsidian, "sync_project_async", sync_mock):
@@ -145,8 +194,74 @@ async def test_note_for_new_project_stores_pending_and_asks(tmp_path: Path) -> N
         stored = store.get_state(session, f"{handlers.STATE_PENDING_PREFIX}77")
 
     assert stored is not None
-    assert stored["name"] == "NewThing"
-    assert stored["notes"] == ["first spark"]
+    assert stored == {"name": "NewThing", "notes": ["first spark"]}
+
+
+async def test_confirmation_yes_creates_project_with_name_and_notes(tmp_path: Path) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+
+    with session_factory() as session:
+        store.set_state(
+            session,
+            f"{handlers.STATE_PENDING_PREFIX}77",
+            {"name": "NewThing", "notes": ["first spark"]},
+        )
+        session.commit()
+
+    sync_result = obsidian.SyncResult(
+        status="ok",
+        path=ctx.vault_path / "projects" / "newthing.md",
+    )
+    update, tg_ctx = _fake_callback_context(ctx, user_id=42, data="confirm:yes:77")
+
+    sync_mock = AsyncMock(return_value=sync_result)
+    with patch.object(obsidian, "sync_project_async", sync_mock):
+        await handlers.handle_confirmation_callback(update, tg_ctx)
+
+    sync_mock.assert_awaited_once()
+    update.callback_query.edit_message_text.assert_awaited_once()
+    reply = update.callback_query.edit_message_text.await_args.args[0]
+    assert "NewThing" in reply
+
+    with session_factory() as session:
+        project = store.get_project(session, "NewThing")
+        assert project is not None
+        assert project.name == "NewThing"
+        assert project.notes == ["first spark"]
+        assert project.description is None
+        assert project.stack == []
+        assert project.tags == []
+        assert project.status is None
+        cleared = store.get_state(session, f"{handlers.STATE_PENDING_PREFIX}77")
+        assert cleared is None
+
+
+async def test_confirmation_no_cancels_without_creating(tmp_path: Path) -> None:
+    ctx, session_factory = _make_ctx(tmp_path)
+
+    with session_factory() as session:
+        store.set_state(
+            session,
+            f"{handlers.STATE_PENDING_PREFIX}77",
+            {"name": "NewThing", "notes": ["first spark"]},
+        )
+        session.commit()
+
+    update, tg_ctx = _fake_callback_context(ctx, user_id=42, data="confirm:no:77")
+
+    sync_mock = AsyncMock()
+    with patch.object(obsidian, "sync_project_async", sync_mock):
+        await handlers.handle_confirmation_callback(update, tg_ctx)
+
+    sync_mock.assert_not_called()
+    reply = update.callback_query.edit_message_text.await_args.args[0]
+    assert "cancelled" in reply.lower()
+
+    with session_factory() as session:
+        project = store.get_project(session, "NewThing")
+        assert project is None
+        cleared = store.get_state(session, f"{handlers.STATE_PENDING_PREFIX}77")
+        assert cleared is None
 
 
 def test_parse_capture_message_single_line_has_no_notes() -> None:

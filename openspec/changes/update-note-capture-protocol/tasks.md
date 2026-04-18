@@ -15,16 +15,16 @@
       miss, ambiguous, no match).
 
 ## 2. Handler rewrite
-- [ ] 2.1 Rewrite `handle_text_message` to: parse -> reject single-line ->
+- [x] 2.1 Rewrite `handle_text_message` to: parse -> reject single-line ->
       exact match -> fuzzy match -> present create-confirmation if no
       match -> append notes and sync if matched.
-- [ ] 2.2 Drop the `ctx.ai_clients.categorize` call from the capture
+- [x] 2.2 Drop the `ctx.ai_clients.categorize` call from the capture
       path. Keep the client available for discussion mode.
-- [ ] 2.3 Simplify the pending-confirmation payload stored in the state
+- [x] 2.3 Simplify the pending-confirmation payload stored in the state
       table to `{name, notes}`. Update
       `handle_confirmation_callback` to create a project with those two
       fields only (no AI-proposed metadata).
-- [ ] 2.4 Integration-test the handler end-to-end with a fake store:
+- [x] 2.4 Integration-test the handler end-to-end with a fake store:
       matched project, typo-matched project, new-project confirmation
       accept/reject, single-line rejection.
 
