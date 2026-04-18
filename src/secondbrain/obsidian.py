@@ -85,9 +85,23 @@ def render_project_md(project: Any) -> str:
     if notes:
         parts.append("\n## Notes\n")
         for note in notes:
-            parts.append(f"- {note}\n")
+            parts.append(_format_note_bullet(note))
 
     return "".join(parts)
+
+
+def _format_note_bullet(note: str) -> str:
+    """Render ``note`` as a single markdown bullet.
+
+    Continuation lines are indented by two spaces so CommonMark keeps them
+    attached to the bullet. Internal blank lines are preserved verbatim so
+    multi-paragraph notes render as a single list item.
+    """
+    lines = note.split("\n")
+    rendered: list[str] = [f"- {lines[0]}\n"]
+    for line in lines[1:]:
+        rendered.append(f"  {line}\n" if line else "\n")
+    return "".join(rendered)
 
 
 def write_project_file(vault_path: Path, subfolder: str, project: Any) -> Path:

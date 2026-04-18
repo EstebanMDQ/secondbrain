@@ -97,16 +97,36 @@ def test_render_project_md_with_all_fields() -> None:
 def test_render_project_md_without_notes_or_tags() -> None:
     project = FakeProject(name="Empty Notes", slug="empty-notes")
 
-    expected = (
-        "---\n"
-        "name: Empty Notes\n"
-        "status: null\n"
-        "stack: []\n"
-        "tags: []\n"
-        "description: null\n"
-        "---\n"
+    expected = "---\nname: Empty Notes\nstatus: null\nstack: []\ntags: []\ndescription: null\n---\n"
+    rendered = render_project_md(project)
+    assert rendered == expected
+    assert "## Notes" not in rendered
+
+
+def test_render_project_md_single_line_note() -> None:
+    project = FakeProject(name="Widget", slug="widget", notes=["line one"])
+    rendered = render_project_md(project)
+    assert rendered.endswith("## Notes\n- line one\n")
+
+
+def test_render_project_md_multi_line_note_indents_continuations() -> None:
+    project = FakeProject(
+        name="Widget",
+        slug="widget",
+        notes=["line one\nline two"],
     )
-    assert render_project_md(project) == expected
+    rendered = render_project_md(project)
+    assert rendered.endswith("## Notes\n- line one\n  line two\n")
+
+
+def test_render_project_md_multi_line_note_with_internal_blank_line() -> None:
+    project = FakeProject(
+        name="Widget",
+        slug="widget",
+        notes=["line one\n\nline three"],
+    )
+    rendered = render_project_md(project)
+    assert rendered.endswith("## Notes\n- line one\n\n  line three\n")
 
 
 def test_render_project_md_with_ideas_section() -> None:
@@ -283,12 +303,8 @@ def test_sync_project_conflict_via_mocked_pull(tmp_path: Path) -> None:
     ) -> subprocess.CompletedProcess[str]:
         call_log.append(args)
         if args[:2] == ["pull", "--rebase"]:
-            raise subprocess.CalledProcessError(
-                1, ["git", *args], output="", stderr="CONFLICT"
-            )
-        return subprocess.CompletedProcess(
-            ["git", *args], 0, stdout="", stderr=""
-        )
+            raise subprocess.CalledProcessError(1, ["git", *args], output="", stderr="CONFLICT")
+        return subprocess.CompletedProcess(["git", *args], 0, stdout="", stderr="")
 
     project = FakeProject(name="Widget", slug="widget", description="oops")
     with patch("secondbrain.obsidian._run_git", side_effect=fake_run):

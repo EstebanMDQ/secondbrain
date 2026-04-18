@@ -29,9 +29,9 @@
       accept/reject, single-line rejection.
 
 ## 3. Obsidian writer
-- [ ] 3.1 Update `render_project_md` to render multi-line note strings
+- [x] 3.1 Update `render_project_md` to render multi-line note strings
       with continuation-line indentation (2 spaces).
-- [ ] 3.2 Unit-test the writer for: single-line bullet, multi-line bullet,
+- [x] 3.2 Unit-test the writer for: single-line bullet, multi-line bullet,
       empty notes list.
 
 ## 4. Config
