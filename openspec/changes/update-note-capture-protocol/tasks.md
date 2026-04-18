@@ -37,17 +37,17 @@
 ## 4. Config
 - [x] 4.1 Add `[capture]` section to `config.Settings`, `CaptureSettings`
       dataclass with `fuzzy_threshold: int = 85`.
-- [ ] 4.2 Document the section in `README.md` and the init wizard.
+- [x] 4.2 Document the section in `README.md` and the init wizard.
 - [x] 4.3 Init wizard SHALL NOT prompt for it by default; it uses the
       hard-coded default unless the user edits the TOML.
 
 ## 5. Spec and documentation
-- [ ] 5.1 Rewrite the "Commands" / "Capturing notes" section of
+- [x] 5.1 Rewrite the "Commands" / "Capturing notes" section of
       `README.md` with the new protocol, including an example.
-- [ ] 5.2 Mark `[ai.categorization]` as deprecated-but-legal in the
+- [x] 5.2 Mark `[ai.categorization]` as deprecated-but-legal in the
       README configuration reference.
 
 ## 6. Validation
-- [ ] 6.1 `uv run pytest` - all new and existing tests pass.
-- [ ] 6.2 `openspec validate update-note-capture-protocol --strict
+- [x] 6.1 `uv run pytest` - all new and existing tests pass.
+- [x] 6.2 `openspec validate update-note-capture-protocol --strict
       --no-interactive`.

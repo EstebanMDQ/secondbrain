@@ -110,9 +110,33 @@ compose file and are persisted across restarts.
 - `/save` - summarize the current discussion and save to a project
 - `/clear` - wipe the discussion history (with confirmation)
 
-Any plain text message is treated as a note, categorized by the AI, and
-saved to the matching project (or proposed as a new project, with a yes/no
-inline keyboard).
+### Capturing notes
+
+Plain text messages are parsed deterministically - no AI is called on the
+capture path. The protocol:
+
+- The first non-empty line is the **project selector** (name, alias, or
+  fuzzy match against either).
+- Subsequent non-empty lines are **notes**. Paragraphs separated by a
+  blank line become separate bullets under `## Notes`; newlines inside a
+  paragraph are preserved as continuation lines.
+- Single-line messages (a selector with no notes) are rejected so the bot
+  never silently creates an empty project.
+
+Project matching is exact first (slug, case-insensitive name, or alias),
+then fuzzy via `rapidfuzz` with a configurable threshold (default 85) and
+a 10-point runner-up gap to avoid ambiguous matches. If nothing matches,
+the bot offers to create the project with a yes/no inline keyboard.
+
+Example:
+
+```
+morning-news
+Fix RSS dedupe - currently drops items that share a title but differ in URL.
+Also: bump feed health jsonl to include HTTP status.
+```
+
+-> matches the `morning-news` project and appends two note bullets.
 
 ## Configuration reference
 
@@ -128,7 +152,7 @@ allowed_user_id = 12345678          # only this Telegram user can talk to the bo
 [ai]
 timeout_seconds = 30                # per-request timeout for both tiers
 
-[ai.categorization]                 # cheap model, runs on every captured message
+[ai.categorization]                 # deprecated: kept for forward-compat, no longer called on capture
 base_url = "http://localhost:11434/v1"
 api_key = "ollama"
 model = "llama3.2"
@@ -141,6 +165,9 @@ model = "gpt-4o"
 [discussion]
 max_history = 20                    # recent messages kept in memory before compaction
 stale_minutes = 30                  # idle timeout before discussion mode auto-exits
+
+[capture]
+fuzzy_threshold = 85                # rapidfuzz score required to match a project selector (0-100)
 
 [obsidian]
 vault_path = "/home/user/obsidian-vault"
