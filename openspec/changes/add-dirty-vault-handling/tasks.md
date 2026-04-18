@@ -27,7 +27,7 @@
       still abort the rebase and write a `{slug}.conflict.md` sidecar.
 
 ## 3. Handlers
-- [ ] 3.1 Add a `dirty` branch to each handler that inspects
+- [x] 3.1 Add a `dirty` branch to each handler that inspects
       `result.status` (new-project command, text capture, confirmation
       callback, save flow). Reply with a short "vault has uncommitted
       changes; commit or stash" message that includes the first few
@@ -47,12 +47,12 @@
         sidecar (regression check).
 
 ## 5. Docs
-- [ ] 5.1 Document `auto_stash_dirty` under "Configuration reference"
+- [x] 5.1 Document `auto_stash_dirty` under "Configuration reference"
       in `README.md`, with a note about stash recovery.
-- [ ] 5.2 Add a "Troubleshooting" entry: what to do when the bot
+- [x] 5.2 Add a "Troubleshooting" entry: what to do when the bot
       reports "vault has uncommitted changes".
 
 ## 6. Validation
-- [ ] 6.1 `uv run pytest` - all new and existing tests pass.
-- [ ] 6.2 `openspec validate add-dirty-vault-handling --strict
+- [x] 6.1 `uv run pytest` - all new and existing tests pass.
+- [x] 6.2 `openspec validate add-dirty-vault-handling --strict
       --no-interactive`.

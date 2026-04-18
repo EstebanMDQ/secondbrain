@@ -347,6 +347,11 @@ async def new_project_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             f"created '{snapshot.name}' but git rebase conflicted - see {result.path.name}"
         )
+    elif result.status == "dirty":
+        await update.message.reply_text(
+            f"created '{snapshot.name}' but vault has uncommitted changes - "
+            f"commit or stash and retry with /project {snapshot.name}\n{result.message}"
+        )
     else:
         await update.message.reply_text(
             f"created '{snapshot.name}' but sync failed: {result.message}"
@@ -464,6 +469,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await message.reply_text(
             f"Updated '{snapshot.name}' but git rebase conflicted - see {result.path.name}"
         )
+    elif result.status == "dirty":
+        await message.reply_text(
+            f"updated '{snapshot.name}' but vault has uncommitted changes - "
+            f"commit or stash and retry with /project {snapshot.name}\n{result.message}"
+        )
     else:
         await message.reply_text(f"Updated '{snapshot.name}' but sync failed: {result.message}")
 
@@ -519,6 +529,11 @@ async def handle_confirmation_callback(update: Update, context: ContextTypes.DEF
     elif result.status == "conflict":
         await query.edit_message_text(
             f"Created '{name}' but git rebase conflicted - see {result.path.name}"
+        )
+    elif result.status == "dirty":
+        await query.edit_message_text(
+            f"Created '{name}' but vault has uncommitted changes - "
+            f"commit or stash and retry with /project {name}\n{result.message}"
         )
     else:
         await query.edit_message_text(f"Created '{name}' but sync failed: {result.message}")
@@ -736,6 +751,11 @@ async def handle_save_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text(
             f"saved to '{name}' but git rebase conflicted - see {result.path.name}"
         )
+    elif result.status == "dirty":
+        await query.edit_message_text(
+            f"saved to '{name}' but vault has uncommitted changes - "
+            f"commit or stash and retry with /project {name}\n{result.message}"
+        )
     else:
         await query.edit_message_text(f"saved to '{name}' but sync failed: {result.message}")
 
@@ -780,6 +800,11 @@ async def _save_to_named_project(ctx: BotContext, message: Any, project_name: st
     elif result.status == "conflict":
         await message.reply_text(
             f"saved to '{name}' but git rebase conflicted - see {result.path.name}"
+        )
+    elif result.status == "dirty":
+        await message.reply_text(
+            f"saved to '{name}' but vault has uncommitted changes - "
+            f"commit or stash and retry with /project {name}\n{result.message}"
         )
     else:
         await message.reply_text(f"saved to '{name}' but sync failed: {result.message}")
