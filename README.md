@@ -77,6 +77,19 @@ second-brain status              # show config path, db path, project count, ser
 second-brain uninstall-service   # stop and remove the service
 ```
 
+On Linux, user-level systemd units only run while the user has an active
+session, so the bot does NOT automatically start at boot or survive
+logout unless you enable lingering once:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+After that, the service starts on every boot and keeps running across
+SSH sessions. Verify with `loginctl show-user "$USER" | grep Linger`
+(should report `Linger=yes`). On macOS this isn't needed - launchd
+agents run as long as the user account exists.
+
 ## Docker
 
 A `Dockerfile` and `docker-compose.yml` are included for users who prefer
