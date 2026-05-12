@@ -331,14 +331,37 @@ def test_dirty_paths_clean_tree_returns_empty(tmp_path: Path) -> None:
     assert _dirty_paths(clone, None) == []
 
 
-def test_dirty_paths_reports_modified_and_untracked(tmp_path: Path) -> None:
+def test_dirty_paths_ignores_untracked_only(tmp_path: Path) -> None:
+    # refine-dirty-vault-detection: untracked entries no longer block sync,
+    # since git pull --rebase happily proceeds over them.
     _, clone = _init_vault(tmp_path)
-    (clone / "README.md").write_text("changed\n")
     (clone / "new.md").write_text("fresh\n")
+    (clone / ".backup").mkdir()
+    (clone / ".backup" / "stale.md").write_text("snapshot\n")
 
     paths = _dirty_paths(clone, None)
 
-    assert set(paths) == {"README.md", "new.md"}
+    assert paths == []
+
+
+def test_dirty_paths_reports_tracked_modified(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / "README.md").write_text("changed\n")
+    (clone / "new.md").write_text("fresh\n")  # untracked, should not appear
+
+    paths = _dirty_paths(clone, None)
+
+    assert paths == ["README.md"]
+
+
+def test_dirty_paths_reports_intent_to_add(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / "draft.md").write_text("scaffold\n")
+    _git(clone, "add", "-N", "draft.md")
+
+    paths = _dirty_paths(clone, None)
+
+    assert paths == ["draft.md"]
 
 
 def test_dirty_paths_excludes_skip_path(tmp_path: Path) -> None:
@@ -346,8 +369,66 @@ def test_dirty_paths_excludes_skip_path(tmp_path: Path) -> None:
     (clone / "README.md").write_text("changed\n")
     (clone / "projects").mkdir()
     (clone / "projects" / "widget.md").write_text("bot output\n")
+    _git(clone, "add", "projects/widget.md")
+    _git(clone, "commit", "-m", "seed widget")
+    (clone / "projects" / "widget.md").write_text("locally edited\n")
 
     paths = _dirty_paths(clone, Path("projects") / "widget.md")
+
+    assert paths == ["README.md"]
+
+
+def test_dirty_paths_skip_path_alone_returns_empty(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / "projects").mkdir()
+    (clone / "projects" / "widget.md").write_text("seed\n")
+    _git(clone, "add", "projects/widget.md")
+    _git(clone, "commit", "-m", "seed widget")
+    (clone / "projects" / "widget.md").write_text("local edits to target\n")
+
+    paths = _dirty_paths(clone, Path("projects") / "widget.md")
+
+    assert paths == []
+
+
+def test_dirty_paths_directory_prefix_ignore(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / ".backup").mkdir()
+    (clone / ".backup" / "notes.md").write_text("snapshot\n")
+    _git(clone, "add", ".backup/notes.md")
+    _git(clone, "commit", "-m", "seed backup")
+    (clone / ".backup" / "notes.md").write_text("changed snapshot\n")
+
+    paths = _dirty_paths(clone, None, ignore_paths=(".backup/",))
+
+    assert paths == []
+
+
+def test_dirty_paths_non_slash_entry_requires_exact_match(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / ".obsidian").mkdir()
+    (clone / ".obsidian" / "workspace.json").write_text("{}\n")
+    _git(clone, "add", ".obsidian/workspace.json")
+    _git(clone, "commit", "-m", "seed obsidian state")
+    (clone / ".obsidian" / "workspace.json").write_text('{"x":1}\n')
+
+    paths = _dirty_paths(clone, None, ignore_paths=(".obsidian",))
+
+    # ".obsidian" without a trailing slash should not match the nested file.
+    assert paths == [".obsidian/workspace.json"]
+
+
+def test_dirty_paths_mixed_ignored_and_unignored(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / ".backup").mkdir()
+    (clone / ".backup" / "notes.md").write_text("snapshot\n")
+    _git(clone, "add", ".backup/notes.md")
+    _git(clone, "commit", "-m", "seed backup")
+    (clone / ".backup" / "notes.md").write_text("changed\n")
+    (clone / "README.md").write_text("real edit\n")
+    (clone / "stray.md").write_text("untracked\n")  # filtered as untracked
+
+    paths = _dirty_paths(clone, None, ignore_paths=(".backup/",))
 
     assert paths == ["README.md"]
 
@@ -455,3 +536,100 @@ async def test_sync_project_async_forwards_auto_stash_dirty(tmp_path: Path) -> N
     ok_result = await sync_project_async(clone, "projects", project, auto_stash_dirty=True)
     assert ok_result.status == "ok"
     assert (clone / "scratch.md").read_text() == "async wip\n"
+
+
+def test_sync_project_untracked_only_is_not_dirty(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / ".backup").mkdir()
+    (clone / ".backup" / "snap.md").write_text("snapshot\n")
+
+    project = FakeProject(name="Widget", slug="widget", description="capture")
+    result = sync_project(clone, "projects", project)
+
+    assert result.status == "ok"
+    assert result.path.exists()
+    # Untracked content was left exactly as it was.
+    assert (clone / ".backup" / "snap.md").read_text() == "snapshot\n"
+
+
+def test_sync_project_dirty_with_ignore_path_proceeds(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / ".backup").mkdir()
+    (clone / ".backup" / "notes.md").write_text("snapshot\n")
+    _git(clone, "add", ".backup/notes.md")
+    _git(clone, "commit", "-m", "seed backup")
+    _git(clone, "push")
+    (clone / ".backup" / "notes.md").write_text("locally edited\n")
+
+    project = FakeProject(name="Widget", slug="widget", description="ignored dirty")
+    result = sync_project(
+        clone,
+        "projects",
+        project,
+        dirty_ignore_paths=(".backup/",),
+    )
+
+    assert result.status == "ok"
+    assert result.path.exists()
+    # Ignored file was not touched - bot only commits its own slug file.
+    assert (clone / ".backup" / "notes.md").read_text() == "locally edited\n"
+
+
+def test_sync_project_mixed_ignored_and_unignored_returns_dirty(tmp_path: Path) -> None:
+    _, clone = _init_vault(tmp_path)
+    (clone / ".backup").mkdir()
+    (clone / ".backup" / "notes.md").write_text("snapshot\n")
+    _git(clone, "add", ".backup/notes.md")
+    _git(clone, "commit", "-m", "seed backup")
+    _git(clone, "push")
+    (clone / ".backup" / "notes.md").write_text("ignored edit\n")
+    (clone / "README.md").write_text("real edit\n")
+
+    project = FakeProject(name="Widget", slug="widget", description="mixed")
+    result = sync_project(
+        clone,
+        "projects",
+        project,
+        dirty_ignore_paths=(".backup/",),
+    )
+
+    assert result.status == "dirty"
+    assert "README.md" in result.message
+    assert ".backup/notes.md" not in result.message
+
+
+def test_sync_project_ignored_dirty_stashes_even_without_auto_stash(
+    tmp_path: Path,
+) -> None:
+    """Ignored-but-dirty paths are stashed transparently so pull can proceed.
+
+    The user opting into `dirty_ignore_paths` is interpreted as "stash these
+    out of my way", regardless of `auto_stash_dirty`. Otherwise the feature
+    would be useless: pull --rebase still refuses with locally-modified
+    tracked files even when we suppress the dirty pre-check.
+    """
+    _, clone = _init_vault(tmp_path)
+    (clone / ".backup").mkdir()
+    (clone / ".backup" / "notes.md").write_text("snapshot\n")
+    _git(clone, "add", ".backup/notes.md")
+    _git(clone, "commit", "-m", "seed backup")
+    _git(clone, "push")
+    (clone / ".backup" / "notes.md").write_text("ignored edit\n")
+
+    project = FakeProject(name="Widget", slug="widget", description="ignored auto-stash")
+    result = sync_project(
+        clone,
+        "projects",
+        project,
+        auto_stash_dirty=False,
+        dirty_ignore_paths=(".backup/",),
+    )
+
+    assert result.status == "ok"
+    # Stash was popped clean at the end of the sync.
+    assert _git(clone, "stash", "list").stdout == ""
+    # Ignored content is restored to its pre-sync state.
+    assert (clone / ".backup" / "notes.md").read_text() == "ignored edit\n"
+    # Bot's own commit landed.
+    log = _git(clone, "log", "--format=%s", "-n", "1").stdout.strip()
+    assert log == "update widget"

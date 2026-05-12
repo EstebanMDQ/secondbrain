@@ -172,7 +172,8 @@ fuzzy_threshold = 85                # rapidfuzz score required to match a projec
 [obsidian]
 vault_path = "/home/user/obsidian-vault"
 subfolder = "projects"              # notes are written to <vault>/<subfolder>/<slug>.md
-auto_stash_dirty = false            # if true, stash uncommitted changes before sync and pop after push; on pop conflict the stash is left in place and the ref is reported
+auto_stash_dirty = false            # if true, stash ALL uncommitted changes before sync and pop after push; on pop conflict the stash is left in place and the ref is reported
+dirty_ignore_paths = []             # paths to stash transparently around the sync, even when auto_stash_dirty=false (entries ending in "/" are directory prefixes, others are exact paths). e.g. [".backup/", ".obsidian/workspace.json"]
 ```
 
 Every key can be overridden by an environment variable with the
@@ -197,17 +198,24 @@ file, which is convenient for Docker and one-off tweaks.
 - **`.conflict.md` files in the vault.** A git rebase failed during sync.
   Resolve the conflict manually in the vault, commit, and push; the bot
   will keep writing to the canonical file on the next update.
-- **`vault has uncommitted changes`.** The bot refuses to sync over a
-  dirty working tree. Run `git status` in your vault, commit or stash
-  the changes, then re-send the note (or run `/project <name>`) to
-  retry. The DB row was already written, so no capture is lost. If you
-  want the bot to handle this transparently, set
-  `auto_stash_dirty = true` under `[obsidian]`: the bot will
-  `git stash push -u` before pulling and `git stash pop` after pushing.
-  If the pop conflicts (rare, only when the pulled remote and your
-  stashed work touched the same file), the bot leaves the stash in
-  place and reports its ref so you can recover with `git stash show`
-  / `git stash pop`.
+- **`vault has uncommitted changes`.** The bot refuses to sync when
+  the vault has tracked-modified files (intent-to-add files count
+  too). Untracked content - new files, `.backup/` folders, editor swap
+  files - does not trigger this, because it can't actually block
+  `git pull --rebase`. Run `git status` in the vault, commit or stash
+  the listed paths, then re-send the note (or run `/project <name>`)
+  to retry. The DB row was already written, so no capture is lost.
+  Two escape hatches:
+  - `auto_stash_dirty = true` under `[obsidian]` makes the bot stash
+    ALL dirty content transparently and pop after the push.
+  - `dirty_ignore_paths = [".backup/", ".obsidian/workspace.json"]`
+    targets specific paths: the bot will stash *those* paths to let
+    the sync proceed, even when `auto_stash_dirty=false`. Entries
+    ending in `/` match directory prefixes; others match exact paths.
+  If a stash pop conflicts (rare - only when the pulled remote and
+  your stashed work touched the same file), the bot leaves the stash
+  in place and reports its ref so you can recover with
+  `git stash show` / `git stash pop`.
 
 ## License
 

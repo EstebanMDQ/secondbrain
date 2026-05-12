@@ -202,6 +202,52 @@ def test_obsidian_auto_stash_dirty_env_override(
     assert settings.obsidian.auto_stash_dirty is True
 
 
+def test_obsidian_dirty_ignore_paths_defaults_empty(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path)
+
+    settings = load_config(config_path)
+
+    assert settings.obsidian.dirty_ignore_paths == ()
+
+
+def test_obsidian_dirty_ignore_paths_toml_override(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    config_path = _write_config(tmp_path, vault=vault, omit={"obsidian"})
+    obsidian_section = textwrap.dedent(
+        f"""
+        [obsidian]
+        vault_path = "{vault}"
+        subfolder = "notes"
+        dirty_ignore_paths = [".backup/", ".obsidian/workspace.json"]
+        """
+    ).strip()
+    config_path.write_text(config_path.read_text() + "\n" + obsidian_section + "\n")
+
+    settings = load_config(config_path)
+
+    assert settings.obsidian.dirty_ignore_paths == (
+        ".backup/",
+        ".obsidian/workspace.json",
+    )
+
+
+def test_obsidian_dirty_ignore_paths_env_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = _write_config(tmp_path)
+    monkeypatch.setenv(
+        "SECONDBRAIN_OBSIDIAN_DIRTY_IGNORE_PATHS",
+        ".backup/, .obsidian/workspace.json",
+    )
+
+    settings = load_config(config_path)
+
+    assert settings.obsidian.dirty_ignore_paths == (
+        ".backup/",
+        ".obsidian/workspace.json",
+    )
+
+
 def test_missing_required_field_raises_config_error(tmp_path: Path) -> None:
     config_path = _write_config(tmp_path, omit={"telegram"})
 

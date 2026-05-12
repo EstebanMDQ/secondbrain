@@ -47,6 +47,7 @@ class ObsidianSettings:
     vault_path: Path = Path()
     subfolder: str = "projects"
     auto_stash_dirty: bool = False
+    dirty_ignore_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,25 @@ def _coerce_bool(value: Any) -> bool:
             return False
         raise ConfigError(f"expected boolean, got {value!r}")
     raise ConfigError(f"expected boolean, got {type(value).__name__}: {value!r}")
+
+
+def _coerce_str_tuple(value: Any) -> tuple[str, ...]:
+    """Coerce a TOML list (or comma-separated env string) into a tuple of strings."""
+    if isinstance(value, str):
+        items = [part.strip() for part in value.split(",")]
+        return tuple(item for item in items if item)
+    if isinstance(value, (list, tuple)):
+        items = []
+        for entry in value:
+            if not isinstance(entry, str):
+                raise ConfigError(
+                    f"expected list of strings, got {type(entry).__name__}: {entry!r}"
+                )
+            items.append(entry)
+        return tuple(items)
+    raise ConfigError(
+        f"expected list of strings or comma-separated string, got {type(value).__name__}: {value!r}"
+    )
 
 
 def _build_provider(raw: dict[str, Any], dotted: str) -> AIProviderSettings:
@@ -161,6 +181,9 @@ def _build_settings(raw: dict[str, Any]) -> Settings:
         auto_stash_dirty=_coerce_bool(
             obsidian_raw.get("auto_stash_dirty", defaults.obsidian.auto_stash_dirty)
         ),
+        dirty_ignore_paths=_coerce_str_tuple(
+            obsidian_raw.get("dirty_ignore_paths", defaults.obsidian.dirty_ignore_paths)
+        ),
     )
 
     return Settings(
@@ -192,6 +215,7 @@ _ENV_MAP: dict[str, tuple[tuple[str, ...], str]] = {
     "obsidian_vault_path": (("obsidian", "vault_path"), "path"),
     "obsidian_subfolder": (("obsidian", "subfolder"), "str"),
     "obsidian_auto_stash_dirty": (("obsidian", "auto_stash_dirty"), "bool"),
+    "obsidian_dirty_ignore_paths": (("obsidian", "dirty_ignore_paths"), "str_tuple"),
 }
 
 
@@ -204,6 +228,8 @@ def _coerce_env(raw: str, kind: str) -> Any:
         return Path(raw)
     if kind == "bool":
         return _coerce_bool(raw)
+    if kind == "str_tuple":
+        return _coerce_str_tuple(raw)
     raise ConfigError(f"internal: unknown env coercion kind {kind!r}")
 
 

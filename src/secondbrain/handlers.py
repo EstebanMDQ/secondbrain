@@ -60,6 +60,7 @@ class BotContext:
     vault_path: Path
     vault_subfolder: str
     auto_stash_dirty: bool = False
+    dirty_ignore_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -340,6 +341,7 @@ async def new_project_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         ctx.vault_subfolder,
         snapshot,
         auto_stash_dirty=ctx.auto_stash_dirty,
+        dirty_ignore_paths=ctx.dirty_ignore_paths,
     )
     if result.status in ("ok", "noop"):
         await update.message.reply_text(f"created '{snapshot.name}' (slug: {snapshot.slug})")
@@ -462,6 +464,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         ctx.vault_subfolder,
         snapshot,
         auto_stash_dirty=ctx.auto_stash_dirty,
+        dirty_ignore_paths=ctx.dirty_ignore_paths,
     )
     if result.status in ("ok", "noop"):
         await message.reply_text(_summarize_update({"notes": notes}, snapshot.name))
@@ -523,6 +526,7 @@ async def handle_confirmation_callback(update: Update, context: ContextTypes.DEF
         ctx.vault_subfolder,
         snapshot,
         auto_stash_dirty=ctx.auto_stash_dirty,
+        dirty_ignore_paths=ctx.dirty_ignore_paths,
     )
     if result.status in ("ok", "noop"):
         await query.edit_message_text(f"Created '{name}'")
@@ -744,6 +748,7 @@ async def handle_save_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         ctx.vault_subfolder,
         snapshot,
         auto_stash_dirty=ctx.auto_stash_dirty,
+        dirty_ignore_paths=ctx.dirty_ignore_paths,
     )
     if result.status in ("ok", "noop"):
         await query.edit_message_text(f"saved to '{name}'")
@@ -794,6 +799,7 @@ async def _save_to_named_project(ctx: BotContext, message: Any, project_name: st
         ctx.vault_subfolder,
         snapshot,
         auto_stash_dirty=ctx.auto_stash_dirty,
+        dirty_ignore_paths=ctx.dirty_ignore_paths,
     )
     if result.status in ("ok", "noop"):
         await message.reply_text(f"saved to '{name}'")

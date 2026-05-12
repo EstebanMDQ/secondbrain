@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -148,30 +149,106 @@ def _has_changes(vault_path: Path, rel_path: Path) -> bool:
     return bool(result.stdout.strip())
 
 
-def _dirty_paths(vault_path: Path, skip_rel_path: Path | None) -> list[str]:
-    """Return paths with non-empty git status, excluding ``skip_rel_path``.
+_INDEX_BLOCKING = frozenset("MADRCU")
+_WORKTREE_BLOCKING = frozenset("MADU")
 
-    Runs ``git status --porcelain -uall`` across the whole repo. Porcelain
-    lines are of the form ``XY <path>`` where ``XY`` is a two-char status and
-    a space follows - the path is everything after the 3-character prefix.
-    ``-uall`` lists untracked files individually so the skip filter can
-    match on a specific file even inside a brand-new directory.
+
+def _is_ignored(path: str, ignore_paths: Sequence[str]) -> bool:
+    """Return True if ``path`` matches an entry in ``ignore_paths``.
+
+    Entries ending in ``/`` are directory prefixes: they match the directory
+    itself and any path nested below it. Entries without a trailing ``/``
+    require an exact path match.
+    """
+    for entry in ignore_paths:
+        if not entry:
+            continue
+        if entry.endswith("/"):
+            prefix = entry
+            if path == prefix.rstrip("/") or path.startswith(prefix):
+                return True
+        elif path == entry:
+            return True
+    return False
+
+
+@dataclass(frozen=True)
+class _DirtyClassification:
+    """Outcome of classifying the working tree's porcelain output.
+
+    ``blocking`` is the set of dirty paths surfaced to the user (filtered
+    by ``ignore_paths`` and ``skip_rel_path``). ``ignored`` is the set of
+    dirty paths matched by ``ignore_paths``; they need stashing too, since
+    they still block ``git pull --rebase``.
+    """
+
+    blocking: list[str]
+    ignored: list[str]
+
+    @property
+    def any_dirty(self) -> bool:
+        return bool(self.blocking) or bool(self.ignored)
+
+
+def _classify_dirty(
+    vault_path: Path,
+    skip_rel_path: Path | None,
+    ignore_paths: Sequence[str] = (),
+) -> _DirtyClassification:
+    """Classify ``git status --porcelain`` entries by what blocks rebase.
+
+    Runs porcelain (no ``-uall``, no ``--ignored``) and walks each line.
+    An entry counts as actually-dirty when its index status is one of
+    ``M A D R C U`` or its worktree status is one of ``M A D U``; this
+    matches what git itself refuses to rebase over. Untracked (``??``)
+    entries never count. The entry is then partitioned: paths matching
+    ``ignore_paths`` go to ``ignored`` (still dirty, but the user said
+    "stash them out of my way"); everything else goes to ``blocking``
+    (surfaced as ``dirty`` in :class:`SyncResult`). ``skip_rel_path`` -
+    the file the bot is about to write - is filtered out entirely.
     """
     result = _run_git(
-        ["status", "--porcelain", "-uall"],
+        ["status", "--porcelain"],
         cwd=vault_path,
         check=True,
     )
     skip = str(skip_rel_path) if skip_rel_path is not None else None
-    paths: list[str] = []
+    blocking: list[str] = []
+    ignored: list[str] = []
     for line in result.stdout.splitlines():
         if len(line) < 4:
+            continue
+        index_status = line[0]
+        worktree_status = line[1]
+        if index_status == "?" and worktree_status == "?":
+            continue
+        if (
+            index_status not in _INDEX_BLOCKING
+            and worktree_status not in _WORKTREE_BLOCKING
+        ):
             continue
         path = line[3:]
         if skip is not None and path == skip:
             continue
-        paths.append(path)
-    return paths
+        if _is_ignored(path, ignore_paths):
+            ignored.append(path)
+        else:
+            blocking.append(path)
+    return _DirtyClassification(blocking=blocking, ignored=ignored)
+
+
+def _dirty_paths(
+    vault_path: Path,
+    skip_rel_path: Path | None,
+    ignore_paths: Sequence[str] = (),
+) -> list[str]:
+    """Return paths that should surface as ``dirty`` to the user.
+
+    Thin wrapper over :func:`_classify_dirty` for tests and back-compat.
+    Returns the un-ignored blocking list; ignored-but-dirty paths are
+    handled internally by :func:`sync_project`.
+    """
+    return _classify_dirty(vault_path, skip_rel_path, ignore_paths).blocking
 
 
 def _top_stash_ref(vault_path: Path) -> str | None:
@@ -192,6 +269,7 @@ def sync_project(
     project: Any,
     *,
     auto_stash_dirty: bool = False,
+    dirty_ignore_paths: Sequence[str] = (),
 ) -> SyncResult:
     """Atomically sync a project markdown file to the vault's git remote.
 
@@ -201,11 +279,17 @@ def sync_project(
     written and the rebase is aborted. On push failure the local commit is
     kept for manual recovery.
 
-    When ``auto_stash_dirty`` is False and the working tree has uncommitted
-    changes unrelated to the project file, the sync is aborted with
-    ``status='dirty'`` and no git operations are performed. When True, those
-    changes are stashed before the pull and restored with ``git stash pop``
-    after a successful push; a failing pop leaves the stash in place.
+    The dirty pre-check ignores untracked entries and partitions the
+    remaining blocking entries into ``blocking`` (surfaced to the user)
+    and ``ignored`` (matched by ``dirty_ignore_paths``).
+
+    - If ``blocking`` is non-empty and ``auto_stash_dirty`` is False, the
+      sync returns ``status='dirty'`` without touching the repo.
+    - If ``blocking`` is non-empty and ``auto_stash_dirty`` is True, or
+      if ``blocking`` is empty but ``ignored`` is non-empty, the bot
+      runs ``git stash push -u`` to move dirty content aside, syncs, then
+      runs ``git stash pop`` to restore. A failing pop leaves the stash
+      in place.
     """
     slug = _project_field(project, "slug", None)
     if not slug:
@@ -214,16 +298,16 @@ def sync_project(
     rel_path = Path(subfolder) / f"{slug}.md"
     target = vault_path / rel_path
 
-    dirty = _dirty_paths(vault_path, rel_path)
+    dirty = _classify_dirty(vault_path, rel_path, dirty_ignore_paths)
     stash_ref: str | None = None
-    if dirty:
-        if not auto_stash_dirty:
-            preview = ", ".join(dirty[:5])
-            return SyncResult(
-                status="dirty",
-                path=target,
-                message=f"vault has uncommitted changes; commit or stash them: {preview}",
-            )
+    if dirty.blocking and not auto_stash_dirty:
+        preview = ", ".join(dirty.blocking[:5])
+        return SyncResult(
+            status="dirty",
+            path=target,
+            message=f"vault has uncommitted changes; commit or stash them: {preview}",
+        )
+    if dirty.any_dirty:
         timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
         stash_msg = f"secondbrain-autostash-{slug}-{timestamp}"
         stash_result = _run_git(
@@ -293,6 +377,7 @@ async def sync_project_async(
     project: Any,
     *,
     auto_stash_dirty: bool = False,
+    dirty_ignore_paths: Sequence[str] = (),
 ) -> SyncResult:
     """Async wrapper that runs :func:`sync_project` under ``asyncio.to_thread``."""
     return await asyncio.to_thread(
@@ -301,4 +386,5 @@ async def sync_project_async(
         subfolder,
         project,
         auto_stash_dirty=auto_stash_dirty,
+        dirty_ignore_paths=dirty_ignore_paths,
     )
